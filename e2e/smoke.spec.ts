@@ -3,7 +3,7 @@ test("dashboard, equipment, readiness and historical troubleshooting", async ({
   page,
   isMobile,
 }) => {
-  await page.goto("");
+  await page.goto("?demo=1");
   await page.getByRole("button", { name: "Aloitetaan" }).click();
   await expect(
     page.getByRole("heading", { name: /Hyvää työpäivää/ }),
@@ -42,7 +42,7 @@ test("edits equipment, creates and edits job, prepares and completes with stock 
   page,
   isMobile,
 }) => {
-  await page.goto("");
+  await page.goto("?demo=1");
   await page.getByRole("button", { name: "Aloitetaan" }).click();
   const navigate = async (name: string) => {
     if (isMobile)

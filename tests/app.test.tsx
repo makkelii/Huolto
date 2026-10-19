@@ -1,4 +1,10 @@
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  cleanup,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, it, expect } from "vitest";
 import App from "../src/App";
 beforeEach(() => {
@@ -7,7 +13,7 @@ beforeEach(() => {
   location.hash = "";
 });
 afterEach(cleanup);
-it("creates equipment and persists it", () => {
+it("creates equipment and persists it", async () => {
   render(<App />);
   fireEvent.click(screen.getByRole("button", { name: "Laitteet" }));
   fireEvent.click(screen.getByRole("button", { name: /Lisää laite/ }));
@@ -15,6 +21,9 @@ it("creates equipment and persists it", () => {
     target: { value: "Test equipment" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Tallenna" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+  );
   expect(
     screen.getByRole("heading", { name: "Test equipment" }),
   ).toBeInTheDocument();
@@ -22,23 +31,26 @@ it("creates equipment and persists it", () => {
     "Test equipment",
   );
 });
-it("switches navigation language", () => {
+it("switches navigation language", async () => {
   render(<App />);
   fireEvent.change(screen.getByLabelText("Kieli"), { target: { value: "de" } });
   expect(screen.getByRole("button", { name: "Anlagen" })).toBeInTheDocument();
   expect(document.documentElement.lang).toBe("de");
 });
-it("creates a maintenance job", () => {
+it("creates a maintenance job", async () => {
   render(<App />);
   fireEvent.click(screen.getByRole("button", { name: "Uusi huoltotyö" }));
   fireEvent.change(screen.getByLabelText("Nimi"), {
     target: { value: "New test service" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Tallenna" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+  );
   fireEvent.click(screen.getByRole("button", { name: /Huoltotyöt 5/ }));
   expect(screen.getByText("New test service")).toBeInTheDocument();
 });
-it("records confirmed fault evidence and retrieves it", () => {
+it("records confirmed fault evidence and retrieves it", async () => {
   render(<App />);
   fireEvent.click(screen.getByRole("button", { name: "Huoltotutka" }));
   fireEvent.click(
@@ -54,6 +66,9 @@ it("records confirmed fault evidence and retrieves it", () => {
     screen.getByLabelText("Vahvistan, että syy ja korjaus on tarkistettu."),
   );
   fireEvent.click(screen.getByRole("button", { name: "Tallenna" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+  );
   fireEvent.change(screen.getByLabelText("Kuvaus"), {
     target: { value: "Pneumatiikka vuotaa" },
   });

@@ -1,30 +1,37 @@
 # Huoltopilotti
 
-A Finnish-first maintenance management MVP for small industrial teams. React 19, TypeScript, Vite, Tailwind 4, shadcn-style Button with CVA, Radix dialogs and Lucide. Finnish, English and German interface; synthetic records retain their entered language.
+Finnish-first maintenance management with Finnish, English and German interfaces. React 19, TypeScript, Vite, Tailwind, Radix/shadcn-style components and Lucide. Configured production URL: **https://brunbar.fi/**.
 
-## Preview
+## Private two-user deployment
 
-Requires Node 22+ and npm. No credentials needed.
+Read **[docs/PRIVATE_SETUP.md](docs/PRIVATE_SETUP.md)** for the complete Supabase and GitHub setup. No credentials need to be shared in chat.
+
+Configured builds provide email/password sign-in, password recovery, invitation password setup and secure SDK session management. Authenticated users load real shared PostgreSQL records. An organization owner/admin manages equipment, inventory adjustments and approved preparation templates; the invited technician works on shared jobs, readiness, consumption and confirmed faults. Public signup and organization creation are disabled for the initial deployment. Provisioning the organization is a one-time database-administrator action; the second user joins through a verified email invitation.
+
+Supabase schema/API includes tenant RLS, composite foreign keys, append-only history and stock movements, immutable approved template versions, guarded mutation RPCs and optimistic organization revisions. Maintenance completion, part/consumable consumption, audit/history and next recurring job commit atomically. Concurrent stale writes fail visibly; no automatic blind retries overwrite records or consume stock twice.
+
+## Preview and separate demo
 
 ```sh
 npm ci
 npm run dev
 ```
 
-Open the printed URL ending in `/Huolto/`. Demo data persists in this browser's localStorage. Settings → Reset demo data restores the original examples. Never enter confidential or real personal data into the demo. Demo storage is not authenticated, encrypted or shared between users.
+Open the printed URL at `/`. Without public Supabase configuration, only the clearly labeled synthetic demo is available. With configuration, the default route is private sign-in; `/?demo=1` opens the isolated browser-local demo. Never enter confidential data in demo mode.
 
-## Working MVP
+Copy `.env.example` to gitignored `.env.local` and set **public** Supabase URL/publishable key to test configured mode. Do not put secret/service-role keys in `VITE_*` variables. Build-time validation rejects known privileged key formats. Setting public config is not sufficient by itself: apply migrations, disable hosted public signup, provision the owner and deploy the invitation Edge Function using the setup guide.
 
-- Responsive dashboard and navigation; light/dark themes; language selection; onboarding, dialogs, feedback and empty states.
-- Equipment creation and editing, manufacturer/model/serial/location fields and job lookup.
-- Maintenance job creation and editing, due dates, priority, assignment, duration, progress state, preparation checklist, completion history and next-job creation on recurring completion.
-- Huoltovalmius groups tools, parts, consumables, isolation/PPE/permits, documents and personnel. Missing items and review status are explicit. A checked list never grants a safety authorization.
-- Human-approved demo template revisions with retained prior versions; confirmed fault recording feeds future historical matches.
-- Inventory item creation/editing, quantities, location, part number, compatibility, alternatives and calibration date. Completion validates all usage before applying a single state update; consumables/parts decrease, reusable tools do not.
-- Huoltotutka uses exact normalized token overlap against verified synthetic history in the same organization; evidence, matching words and limitations are shown. It has no AI dependency and invents no evidence.
-- Completed/overdue reports, escaped CSV and browser print/save-to-PDF.
-- Supabase schema foundation, tenant RLS, composite tenant foreign keys, controlled stock RPC and private attachment policies.
-- Explicitly inactive billing function. No real checkout, payment or deployment has been activated.
+The same equipment/job/readiness/troubleshooting UI supports both modes. Production application records never read or write demo localStorage. Only preferences and Supabase session state persist in the browser in private mode. Failed server operations show errors and never fall back to synthetic data. Manual reload and idle polling synchronize shared data.
+
+## Features
+
+- Responsive dashboard, equipment and inventory forms, maintenance creation/editing, assignments, due dates, recurrence and reports.
+- Huoltovalmius preparation checks for tools, parts, consumables, safety, documents and personnel. The initial private version has one organization-wide preparation template with explicit owner approval and version history.
+- Completion records actual usage and decreases parts/consumables, not reusable tools. Completed jobs are immutable through the API.
+- Huoltotutka retrieves verified same-organization fault records using explainable word matching; no paid AI API, fabricated evidence or automatic safety authorization.
+- CSV exports with spreadsheet escaping and browser print/save-to-PDF.
+- Light/dark themes, onboarding and preserved synthetic demo workflows.
+- Billing remains disabled. No Stripe work is enabled by this change.
 
 ## Validation
 
@@ -33,24 +40,20 @@ npm run lint
 npm run typecheck
 npm test
 npm run test:integration
+npm run test:db               # disposable Docker PostgreSQL, no production credentials
 npm run build
+npm run verify:build
+npm run test:deployment
 npx playwright install --with-deps chromium
 npm run test:e2e
 ```
 
-See `docs/VALIDATION.md` for commands actually executed in the implementation environment. Application tests do not establish database RLS correctness; `npm run test:db` runs SQL tenant and stock tests in disposable PostgreSQL with minimal Supabase auth/storage fixtures. Full Supabase deployment tests remain necessary.
+`docs/VALIDATION.md` records executed commands and verification limits. PostgreSQL tests use actual RLS/transactions with minimal Auth/Storage fixtures. SDK/frontend/Edge-handler tests use mocked service boundaries. They do not claim live Supabase email delivery, Edge deployment or production-host verification.
 
-## Production status
+## Deployment and remaining work
 
-This is a usable browser-local MVP, not a production SaaS release. Supabase credentials in `.env.example` are reserved for future integration; setting them does not switch the app into production mode. Authentication, tenant provisioning, invitations, production data adapters, reminders, transactional server completion, reservation allocation, file/QR workflows, server recurrence scheduling and Stripe integration are not connected. Demo templates support explicit approval of actual-use quantities as a new version. Requirements remain illustrative and require qualified review. There are no genuine manufacturer instructions in the demo.
+The source-repository workflow only validates; it cannot deploy Pages. A separate manual-only workflow is locked to the dedicated `makkelii/huoltopilotti-brunbar` repository, the `main` branch and confirmed `brunbar.fi` Pages domain. The CNAME template is staged outside `public/` and copied only into the dedicated deployment artifact. See `docs/BRUNBAR_DEPLOYMENT.md` for Finnish setup, DNS, HTTPS, cutover and rollback instructions, and `docs/HOSTING_INSPECTION.md` for verification limits and protection of 585.fi.
 
-Before storing customer data, complete `docs/SECURITY.md`, run database tests, and implement the roadmap. Do not use demo readiness or matching as a safety decision.
+This branch includes PR #2 (still open at inspection), preserving all Supabase implementation. Do not copy the old demo-only main into the new repository. No database schema or bootstrap reset is introduced here. The existing `invite-technician` function is retained unchanged; brunbar uses `invite-technician-brunbar` with `BRUNBAR_APP_ORIGIN` so legacy `APP_ORIGIN` remains untouched.
 
-## Documentation
-
-- `docs/DEPLOYMENT.md`: GitHub Pages, base path and backend setup
-- `docs/SECURITY.md`: trust boundaries, permissions and GDPR
-- `docs/ROADMAP.md`: remaining product and production work
-- `supabase/migrations/202610190001_core.sql`: schema and policies
-
-No secrets belong in VITE variables. No deployment or payment activation is automatic on push.
+No live hosting, custom domain, DNS, Auth settings or database has been changed. Live Supabase configuration, email delivery and operator acceptance tests remain necessary. Billing stays disabled.

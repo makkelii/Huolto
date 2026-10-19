@@ -1,0 +1,83 @@
+name: Deploy brunbar.fi (dedicated repository only)
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_domain:
+        description: "Type brunbar.fi to confirm replacement of that site only"
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: brunbar-production
+  cancel-in-progress: false
+jobs:
+  prepare:
+    if: >-
+      github.repository == 'makkelii/huoltopilotti-brunbar' &&
+      github.ref == 'refs/heads/main' &&
+      vars.BRUNBAR_DEPLOYMENT_APPROVED == 'true' &&
+      inputs.confirm_domain == 'brunbar.fi'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Verify dedicated target and public configuration
+        env:
+          BRUNBAR_DEPLOYMENT_APPROVED: ${{ vars.BRUNBAR_DEPLOYMENT_APPROVED }}
+          CONFIRM_DOMAIN: ${{ inputs.confirm_domain }}
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
+        run: node scripts/verify-brunbar-deploy.mjs
+      - name: Read and verify dedicated Pages custom domain (no settings changes)
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const {data} = await github.rest.repos.getPages(context.repo);
+            if (data.cname !== 'brunbar.fi') {
+              core.setFailed('Dedicated repository Pages custom domain must already be brunbar.fi. No settings were changed.');
+            }
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run test:integration
+      - run: npm run test:db
+      - run: npm run test:deployment
+      - run: npm run build
+        env:
+          VITE_BASE_PATH: /
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
+      - run: npm run verify:build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - name: Add CNAME only to the dedicated deployment artifact
+        run: install -m 644 deploy/brunbar/CNAME dist/CNAME
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+  deploy:
+    if: >-
+      github.repository == 'makkelii/huoltopilotti-brunbar' &&
+      github.ref == 'refs/heads/main' &&
+      vars.BRUNBAR_DEPLOYMENT_APPROVED == 'true' &&
+      inputs.confirm_domain == 'brunbar.fi'
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: brunbar-production
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy only the verified dedicated repository artifact
+        id: deployment
+        uses: actions/deploy-pages@v4

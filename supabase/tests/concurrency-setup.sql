@@ -1,0 +1,6 @@
+insert into auth.users(id,email,email_confirmed_at) values('a0000000-0000-0000-0000-000000000001','race-owner@example.invalid',now()),('a0000000-0000-0000-0000-000000000002','race-tech@example.invalid',now());
+insert into organizations(id,name) values('b0000000-0000-0000-0000-000000000001','Concurrent workshop');
+insert into memberships(organization_id,user_id,role,display_name) values('b0000000-0000-0000-0000-000000000001','a0000000-0000-0000-0000-000000000001','owner','Owner'),('b0000000-0000-0000-0000-000000000001','a0000000-0000-0000-0000-000000000002','technician','Tech');
+insert into assets(id,organization_id,name) values('c0000000-0000-0000-0000-000000000001','b0000000-0000-0000-0000-000000000001','Motor');
+insert into inventory(id,organization_id,type,name,quantity) values('d0000000-0000-0000-0000-000000000001','b0000000-0000-0000-0000-000000000001','part','Last bearing',1);
+insert into maintenance_jobs(id,organization_id,asset_id,name,due_at) values('e0000000-0000-0000-0000-000000000001','b0000000-0000-0000-0000-000000000001','c0000000-0000-0000-0000-000000000001','First job',now()),('e0000000-0000-0000-0000-000000000002','b0000000-0000-0000-0000-000000000001','c0000000-0000-0000-0000-000000000001','Second job',now());

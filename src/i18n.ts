@@ -1,5 +1,122 @@
 export type Lang = "fi" | "en" | "de";
 const words = {
+  remove: ["Poista", "Remove", "Entfernen"],
+  privateSignIn: [
+    "Kirjaudu työtilaan",
+    "Sign in to workspace",
+    "Am Arbeitsbereich anmelden",
+  ],
+  signIn: ["Kirjaudu", "Sign in", "Anmelden"],
+  signOut: ["Kirjaudu ulos", "Sign out", "Abmelden"],
+  email: ["Sähköposti", "Email", "E-Mail"],
+  password: ["Salasana", "Password", "Passwort"],
+  recoverPassword: [
+    "Unohtuiko salasana?",
+    "Forgot password?",
+    "Passwort vergessen?",
+  ],
+  setPassword: [
+    "Aseta uusi salasana",
+    "Set a new password",
+    "Neues Passwort festlegen",
+  ],
+  sendRecovery: [
+    "Lähetä palautuslinkki",
+    "Send recovery link",
+    "Wiederherstellungslink senden",
+  ],
+  recoverySent: [
+    "Jos osoite kuuluu käyttäjälle, palautusohje lähetetään sähköpostiin.",
+    "If the address belongs to an account, recovery instructions will be emailed.",
+    "Falls ein Konto existiert, werden Anweisungen per E-Mail gesendet.",
+  ],
+  passwordUpdated: [
+    "Salasana päivitetty.",
+    "Password updated.",
+    "Passwort aktualisiert.",
+  ],
+  authError: [
+    "Kirjautuminen epäonnistui. Tarkista tiedot tai pyydä uusi linkki.",
+    "Authentication failed. Check your details or request a new link.",
+    "Anmeldung fehlgeschlagen. Angaben prüfen oder neuen Link anfordern.",
+  ],
+  accessError: [
+    "Työtilaa ei voitu ladata. Tarkista yhteys ja pyydä ylläpitäjää tarkistamaan jäsenyys.",
+    "Workspace could not be loaded. Check your connection and ask an administrator to verify membership.",
+    "Arbeitsbereich konnte nicht geladen werden. Verbindung und Mitgliedschaft prüfen lassen.",
+  ],
+  accessTitle: [
+    "Pääsy työtilaan",
+    "Workspace access",
+    "Zugriff auf Arbeitsbereich",
+  ],
+  privateNotice: [
+    "Yksityinen työtila. Käyttäjätilit luodaan vain kutsusta.",
+    "Private workspace. Accounts are available by invitation only.",
+    "Privater Arbeitsbereich. Konten nur auf Einladung.",
+  ],
+  loading: ["Ladataan…", "Loading…", "Wird geladen…"],
+  openDemo: [
+    "Avaa erillinen demo",
+    "Open separate demo",
+    "Separate Demo öffnen",
+  ],
+  notConfigured: [
+    "Supabase-yhteyttä ei ole määritetty. Käytössä on vain demo.",
+    "Supabase is not configured. Only demo mode is available.",
+    "Supabase ist nicht konfiguriert. Nur Demo verfügbar.",
+  ],
+  reload: ["Lataa tiedot uudelleen", "Reload data", "Daten neu laden"],
+  privateMode: [
+    "Yksityinen työtila",
+    "Private workspace",
+    "Privater Arbeitsbereich",
+  ],
+  persistentText: [
+    "Tiedot tallennetaan organisaation yhteiseen tietokantaan.",
+    "Data is saved in your organization’s shared database.",
+    "Daten werden in der gemeinsamen Organisationsdatenbank gespeichert.",
+  ],
+  serverSaved: [
+    "Tallennettu tietokantaan",
+    "Saved to database",
+    "In Datenbank gespeichert",
+  ],
+  saveError: [
+    "Tallennus epäonnistui. Lataa tiedot uudelleen ennen uutta yritystä. Muutoksia ei vahvistettu.",
+    "Save failed. Reload before trying again. Changes were not confirmed.",
+    "Speichern fehlgeschlagen. Vor erneutem Versuch Daten neu laden. Änderungen wurden nicht bestätigt.",
+  ],
+  conflict: [
+    "Toinen käyttäjä muutti tietoja. Lataa uusin versio ja tee muutos uudelleen.",
+    "Another user changed the data. Reload the latest version and reapply your change.",
+    "Daten wurden geändert. Neu laden und Änderung erneut vornehmen.",
+  ],
+  invite: ["Kutsu asentaja", "Invite technician", "Techniker einladen"],
+  inviteSent: [
+    "Kutsu lähetetty. Vastaanottajan on hyväksyttävä sähköpostilinkki.",
+    "Invitation sent. The recipient must accept the emailed link.",
+    "Einladung gesendet. Empfänger muss den E-Mail-Link bestätigen.",
+  ],
+  inviteError: [
+    "Kutsua ei voitu lähettää. Tarkista osoite, oikeudet ja kutsutilanne.",
+    "Invitation could not be sent. Check the address, permissions and pending invitations.",
+    "Einladung fehlgeschlagen. Adresse, Berechtigungen und offene Einladungen prüfen.",
+  ],
+  owner: ["Omistaja", "Owner", "Eigentümer"],
+  administrator: ["Ylläpitäjä", "Administrator", "Administrator"],
+  viewer: ["Katselija", "Viewer", "Betrachter"],
+  noEquipment: [
+    "Lisää ensin laite.",
+    "Add equipment first.",
+    "Zuerst eine Anlage hinzufügen.",
+  ],
+  noEvidence: [
+    "Vain organisaation vahvistetut vikakirjaukset. Sanavastaavuus ei ole diagnoosi. Noudata hyväksyttyjä työohjeita.",
+    "Only verified fault records from your organization are searched. Word overlap is not a diagnosis. Follow approved instructions.",
+    "Nur bestätigte Störungsberichte Ihrer Organisation werden durchsucht. Wortübereinstimmung ist keine Diagnose. Freigegebene Anweisungen beachten.",
+  ],
+
   newFault: [
     "Kirjaa vahvistettu vika",
     "Record confirmed fault",

@@ -5,11 +5,12 @@ export default defineConfig({
     launchOptions: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
       ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE }
       : undefined,
-    baseURL: "http://127.0.0.1:4173/Huolto/",
+    baseURL: "http://127.0.0.1:4173/",
   },
   webServer: {
-    command: "npm run dev -- --port 4173",
-    url: "http://127.0.0.1:4173/Huolto/",
+    command:
+      "VITE_SUPABASE_URL=http://127.0.0.1:54321 VITE_SUPABASE_PUBLISHABLE_KEY=test-public-key npm run dev -- --port 4173",
+    url: "http://127.0.0.1:4173/",
     reuseExistingServer: !process.env.CI,
   },
   projects: [

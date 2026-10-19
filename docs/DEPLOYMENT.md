@@ -1,28 +1,17 @@
-# Deployment
+# Deployment architecture
 
-## Local
+Canonical prepared application URL: **https://brunbar.fi/**, Vite base `/`. Hash navigation (`#assets`, `#jobs`) and Auth query callbacks share the root static entrypoint. `npm run build` produces `dist/`; `npm run verify:build` checks emitted root asset references and rejects legacy deployment URLs in the browser bundle.
 
-Run `npm ci`, `npm run dev`, then visit the printed URL at `/Huolto/`. `npm run build` creates `dist/`. Hash navigation preserves direct links such as `/Huolto/#assets` without server rewrites. Vite uses the fixed `/Huolto/` base path for scripts and CSS. Changing the repository name requires changing this base and browser test baseURL.
+Read **HOSTING_INSPECTION.md** before any live action. Existing Pages custom-domain configuration could not be read (API Forbidden), so no sharing relationship with 585.fi is assumed safe. Do not repoint the existing Pages site.
 
-## GitHub Pages (requires owner approval)
+Use a **new, dedicated** `makkelii/huoltopilotti-brunbar` repository and Pages site. **BRUNBAR_DEPLOYMENT.md** contains the Finnish operator checklist, new-repository setup, domain verification, DNS records, HTTPS, propagation, acceptance tests and brunbar-only rollback. **PRIVATE_SETUP.md** covers Supabase configuration without recreating an existing database.
 
-1. Review changes on a branch and run validation. Commit `package-lock.json`.
-2. Merge only after explicit approval. In repository Settings → Pages, select GitHub Actions.
-3. Configure the `github-pages` environment with required reviewers to gate publishing.
-4. Explicitly dispatch “Validate and deploy GitHub Pages” from `main` after approval. Pull requests validate but never deploy. Pushes do not trigger deployment.
-5. The workflow installs, lints, type-checks, runs unit/integration tests, builds, runs desktop/mobile Chromium smoke tests and publishes the build artifact.
-6. Confirm https://makkelii.github.io/Huolto/ and a direct hash route. Check network assets load from `/Huolto/assets/` and no server secrets appear in the bundle.
+- `.github/workflows/deploy.yml`: PR/manual validation only, no Pages publish step or Pages-write/OIDC permissions. It emits a normal non-deployed artifact, with no CNAME.
+- `.github/workflows/deploy-brunbar.yml`: manual-only publishing, exact dedicated repository and main-branch guards, explicit repository-variable/domain confirmation, and read-only Pages custom-domain verification. It never edits Pages settings, DNS or Supabase configuration. The `brunbar-production` environment can require human reviewers.
+- `deploy/brunbar/CNAME`: `brunbar.fi`, staged separately. Only the dedicated workflow copies it into its deployment artifact after tests. There is no root/public CNAME that could accidentally bind the source repo.
+- Public GitHub variables in the new repository: `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `BRUNBAR_DEPLOYMENT_APPROVED`. The workflow sets `VITE_BASE_PATH=/`. Never expose service-role, database or SMTP secrets in browser variables.
+- The existing invitation Edge Function is preserved; deploy only `invite-technician-brunbar` when later authorized. Set its namespaced `BRUNBAR_APP_ORIGIN=https://brunbar.fi`, leaving shared `APP_ORIGIN` and legacy function deployment unchanged.
 
-This workflow was created but has not been dispatched. No remote branch or PR was created by the implementation task.
+PR #2 was open at inspection; this preparation branch is based on its exact head and includes authentication, persistence and security work. No migrations are changed and no database reset is requested. If PR #2 is reviewed/merged separately, integrate in order; when copying into the dedicated repository use this reviewed combined branch, not the demo-only main.
 
-## Supabase (not connected yet)
-
-Create a development Supabase project, run migrations with Supabase CLI (`supabase db reset` locally), then run `supabase/tests/tenant_isolation.sql` against the migrated local database. Review policies before production. Tenant provisioning must atomically create an organization and owner membership through a verified server endpoint. Clients must never self-assign memberships or edit subscriptions. Build authenticated production adapters and explicit organization selection before enabling production mode.
-
-The current billing function returns HTTP 503 by design. Before replacement: implement JWT verification, owner/admin membership verification, server-selected Stripe price IDs, allowlisted redirect URLs, customer ownership checks for the portal, raw-body webhook signature verification, an event-ID uniqueness ledger and idempotent subscription updates. Store Stripe keys, webhook secret and service-role key only as Edge secrets. Test with Stripe test keys; obtain explicit approval before live payments.
-
-## Commercial hosting limitations
-
-GitHub Pages is suitable for this static demo and uses a public static bundle. It has no server secrets, server routes, configurable security headers, SSR, authentication gateway or SLA; review GitHub's current commercial-use policies before operating a subscription business there. Host the static frontend on Cloudflare Pages, Netlify or Vercel with security headers and a custom domain; keep Supabase Auth/Postgres/Storage/Edge Functions as the backend. Update Vite base to `/` on a root-domain host. Configure CSP, HTTPS, HSTS, trusted origins and redirects. A public frontend is never a substitute for RLS.
-
-For isolated SQL validation without Supabase CLI, `npm run test:db` uses Docker PostgreSQL 16 and minimal Auth/Storage API fixtures. It does not test Supabase Auth sessions, Storage HTTP access or Edge deployment.
+No automatic publication, merging, DNS changes or live integration work was performed. GitHub Pages hosts public static files; authorization remains in Supabase RLS and verified functions. Preserve any separately managed security headers and HTTPS policies. Stripe remains disabled.

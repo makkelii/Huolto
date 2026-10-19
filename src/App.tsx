@@ -1,0 +1,1694 @@
+import { useEffect, useState, type FormEvent } from "react";
+import * as Dialog from "@radix-ui/react-dialog";
+import {
+  LayoutDashboard,
+  Box,
+  Wrench,
+  Package,
+  Radio,
+  BarChart3,
+  Settings,
+  ChevronRight,
+  Plus,
+  Search,
+  ArrowUpRight,
+  Check,
+  Clock,
+  AlertTriangle,
+  ArrowRight,
+  Sun,
+  Moon,
+  Menu,
+  X,
+  BookOpen,
+  ShieldCheck,
+  Download,
+  HelpCircle,
+  Factory,
+  ChevronDown,
+  CheckCircle2,
+  CalendarDays,
+} from "lucide-react";
+import { Button } from "./components/ui/button";
+import { translate, local, type Lang, type Key } from "./i18n";
+import { seed, requirements } from "./seed";
+import {
+  id,
+  readiness,
+  matchFaults,
+  completeJob,
+  csv,
+  type Store,
+  type Asset,
+  type Job,
+  type Item,
+} from "./domain";
+type Page =
+  | "dashboard"
+  | "assets"
+  | "jobs"
+  | "inventory"
+  | "radar"
+  | "reports"
+  | "templates"
+  | "settings";
+const nav: { page: Page; icon: typeof Box }[] = [
+  { page: "dashboard", icon: LayoutDashboard },
+  { page: "assets", icon: Box },
+  { page: "jobs", icon: Wrench },
+  { page: "inventory", icon: Package },
+  { page: "radar", icon: Radio },
+  { page: "templates", icon: BookOpen },
+  { page: "reports", icon: BarChart3 },
+];
+const storeKey = "huoltopilotti-demo-v1";
+export default function App() {
+  const [store, setStore] = useState<Store>(() => {
+    try {
+      const raw = localStorage.getItem(storeKey);
+      if (raw) {
+        const x = JSON.parse(raw);
+        if (
+          x.version === 1 &&
+          Array.isArray(x.assets) &&
+          Array.isArray(x.jobs) &&
+          Array.isArray(x.items) &&
+          Array.isArray(x.faults) &&
+          Array.isArray(x.events)
+        )
+          return {
+            ...x,
+            templateRequirements: x.templateRequirements || requirements(),
+            templateHistory: x.templateHistory || [],
+          };
+      }
+    } catch {
+      /* recover original demo */
+    }
+    return seed();
+  });
+  const [lang, setLang] = useState<Lang>(() => {
+    const v = localStorage.getItem("hp-lang");
+    return v === "en" || v === "de" ? v : "fi";
+  });
+  const t = (k: Key) =>
+    translate(["fi", "en", "de"].includes(lang) ? lang : "fi", k);
+  const [page, setPage] = useState<Page>("dashboard"),
+    [query, setQuery] = useState(""),
+    [filter, setFilter] = useState("all"),
+    [dark, setDark] = useState(localStorage.getItem("hp-theme") === "dark"),
+    [mobile, setMobile] = useState(false),
+    [toast, setToast] = useState(""),
+    [modal, setModal] = useState<
+      "asset" | "job" | "item" | "fault" | "onboarding" | "help" | null
+    >(() => (localStorage.getItem("hp-welcome") ? null : "onboarding")),
+    [editing, setEditing] = useState<Asset | Job | Item | null>(null),
+    [selected, setSelected] = useState<string | null>(null),
+    [symptoms, setSymptoms] = useState(""),
+    [searched, setSearched] = useState(false),
+    [actual, setActual] = useState<Record<string, number>>({}),
+    [notes, setNotes] = useState(""),
+    [completion, setCompletion] = useState(false),
+    [error, setError] = useState("");
+  useEffect(() => {
+    try {
+      localStorage.setItem(storeKey, JSON.stringify(store));
+    } catch {
+      setError(
+        lang === "fi"
+          ? "Selaimen tallennustila ei ole käytettävissä."
+          : lang === "de"
+            ? "Browserspeicher nicht verfügbar."
+            : "Browser storage is unavailable.",
+      );
+    }
+  }, [store, lang]);
+  useEffect(() => {
+    document.documentElement.lang = lang;
+    localStorage.setItem("hp-lang", lang);
+  }, [lang]);
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", dark);
+    localStorage.setItem("hp-theme", dark ? "dark" : "light");
+  }, [dark]);
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(""), 3500);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
+  const go = (p: Page) => {
+    setPage(p);
+    setQuery("");
+    setFilter("all");
+    setMobile(false);
+    window.location.hash = p;
+  };
+  useEffect(() => {
+    const apply = () => {
+      const p = location.hash.slice(1);
+      if ([...nav.map((n) => n.page), "settings"].includes(p))
+        setPage(p as Page);
+    };
+    apply();
+    window.addEventListener("hashchange", apply);
+    return () => window.removeEventListener("hashchange", apply);
+  }, []);
+  const change = (next: Store) => {
+    setStore(next);
+    setToast(t("saved"));
+  };
+  const open = (
+    kind: "asset" | "job" | "item",
+    entry: Asset | Job | Item | null = null,
+  ) => {
+    setEditing(entry);
+    setModal(kind);
+    setError("");
+  };
+  const active = store.jobs.filter((j) => j.status !== "completed"),
+    today = new Date().toLocaleDateString("sv-SE");
+  const overdue = active.filter((j) => j.due < today);
+  const chosen = store.jobs.find((j) => j.id === selected);
+  const low = store.items.filter((i) => i.quantity - i.reserved < 2);
+  const filteredJobs = store.jobs.filter(
+    (j) =>
+      (filter === "all" ||
+        j.status === filter ||
+        (filter === "overdue" && j.due < today && j.status !== "completed")) &&
+      (j.name + " " + store.assets.find((a) => a.id === j.assetId)?.name)
+        .toLowerCase()
+        .includes(query.toLowerCase()),
+  );
+  const labelJob = (j: Job) => {
+    const names: Record<string, Key> = {};
+    return names[j.id] ? t(names[j.id]) : j.name;
+  };
+  const assetName = (assetId: string) =>
+    store.assets.find((a) => a.id === assetId)?.name || "—";
+  function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget),
+      s = (k: string) => String(f.get(k) || "").trim();
+    if (!s("name")) return;
+    const entryId = editing?.id || id();
+    if (modal === "asset") {
+      const asset: Asset = {
+        id: entryId,
+        name: s("name"),
+        manufacturer: s("manufacturer"),
+        model: s("model"),
+        serial: s("serial"),
+        location: s("location"),
+        description: s("description"),
+        status: "operational",
+      };
+      change({
+        ...store,
+        assets: editing
+          ? store.assets.map((a) => (a.id === entryId ? asset : a))
+          : [...store.assets, asset],
+      });
+    } else if (modal === "job") {
+      const previous = editing as Job | null;
+      const job: Job = {
+        id: entryId,
+        name: s("name"),
+        assetId: s("assetId"),
+        due: s("due"),
+        priority: s("priority") as Job["priority"],
+        status: previous?.status || "planned",
+        technician: s("technician"),
+        duration: Number(s("duration")),
+        requirements:
+          previous?.requirements ||
+          store.templateRequirements.map((r) => ({ ...r, state: "unchecked" })),
+        notes: previous?.notes || "",
+        actual: previous?.actual || {},
+        recurrence: Number(s("recurrence")),
+      };
+      change({
+        ...store,
+        jobs: editing
+          ? store.jobs.map((j) => (j.id === entryId ? job : j))
+          : [...store.jobs, job],
+      });
+    } else if (modal === "item") {
+      const item: Item = {
+        id: entryId,
+        name: s("name"),
+        type: s("type") as Item["type"],
+        quantity: Number(s("quantity")),
+        reserved: 0,
+        location: s("location"),
+        spec: s("spec"),
+        manufacturer: s("manufacturer"),
+        partNumber: s("partNumber"),
+        calibration: s("calibration"),
+        compatible: s("compatible"),
+        alternatives: s("alternatives"),
+      };
+      change({
+        ...store,
+        items: editing
+          ? store.items.map((i) => (i.id === entryId ? item : i))
+          : [...store.items, item],
+      });
+    } else if (modal === "fault") {
+      const text = s("name"),
+        cause = s("cause");
+      change({
+        ...store,
+        faults: [
+          ...store.faults,
+          {
+            id: entryId,
+            orgId: "demo",
+            assetId: s("assetId"),
+            symptoms: [text, text, text],
+            cause: [cause, cause, cause],
+            check: store.faults[0].check,
+            verified: true,
+            date: today,
+          },
+        ],
+      });
+    }
+    setModal(null);
+  }
+  function finish() {
+    if (!chosen) return;
+    try {
+      change(completeJob(store, chosen.id, actual, notes));
+      setCompletion(false);
+      setSelected(null);
+      setError("");
+    } catch {
+      setError(t("stockError"));
+    }
+  }
+  function exportCsv() {
+    const rows = [
+      [t("job"), t("equipment"), t("due"), t("status"), t("notes")],
+      ...store.jobs.map((j) => [
+        j.name,
+        assetName(j.assetId),
+        j.due,
+        t(j.status),
+        j.notes,
+      ]),
+    ];
+    const url = URL.createObjectURL(
+      new Blob([csv(rows)], { type: "text/csv;charset=utf-8;" }),
+    );
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "huoltopilotti.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+  const jobTable = (jobs: Job[]) => (
+    <div className="table-scroll maintenance-table">
+      <table>
+        <thead>
+          <tr>
+            <th>{t("job")}</th>
+            <th>{t("due")}</th>
+            <th>{t("readiness")}</th>
+            <th>{t("technician")}</th>
+            <th>{t("status")}</th>
+            <th>
+              <span className="sr-only">{t("edit")}</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {jobs.map((j) => (
+            <tr key={j.id}>
+              <td>
+                <button
+                  className="job-link"
+                  onClick={() => {
+                    setSelected(j.id);
+                    setCompletion(false);
+                    setActual({});
+                    setNotes(j.notes);
+                  }}
+                >
+                  <span
+                    className={
+                      "table-icon " + (j.priority === "high" ? "amber" : "")
+                    }
+                  >
+                    <Wrench size={17} />
+                  </span>
+                  <span>
+                    <strong>{labelJob(j)}</strong>
+                    <small>
+                      {assetName(j.assetId)}{" "}
+                      <span className="muted">
+                        ·{" "}
+                        {j.id.startsWith("j")
+                          ? "HT-00" + j.id.slice(1)
+                          : j.id.slice(0, 6)}
+                      </span>
+                    </small>
+                    <small className="mobile-job-meta">
+                      {new Date(j.due + "T12:00:00").toLocaleDateString(lang)} ·{" "}
+                      {t(
+                        j.due < today && j.status !== "completed"
+                          ? "overdue"
+                          : j.status,
+                      )}{" "}
+                      · {t(readiness(j))}
+                    </small>
+                  </span>
+                </button>
+              </td>
+              <td>
+                <span
+                  className={
+                    j.due < today && j.status !== "completed"
+                      ? "danger-text"
+                      : ""
+                  }
+                >
+                  {new Date(j.due + "T12:00:00").toLocaleDateString(lang, {
+                    day: "numeric",
+                    month: "short",
+                  })}
+                </span>
+                {j.due < today && j.status !== "completed" && (
+                  <small className="danger-text">{t("overdue")}</small>
+                )}
+              </td>
+              <td>
+                <span className={"readiness-dot " + readiness(j)} />
+                {t(readiness(j))}
+              </td>
+              <td>
+                <span className="avatar tiny">
+                  {j.technician
+                    .split(" ")
+                    .map((n) => n[0])
+                    .join("")}
+                </span>
+                <span className="technician">{j.technician.split(" ")[0]}</span>
+              </td>
+              <td>
+                <span className={"badge " + j.status}>{t(j.status)}</span>
+              </td>
+              <td>
+                <button
+                  className="icon-button"
+                  aria-label={t("edit")}
+                  onClick={() => open("job", j)}
+                >
+                  <ChevronRight size={18} />
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {jobs.length === 0 && <p className="empty">{t("empty")}</p>}
+    </div>
+  );
+  return (
+    <div className="app">
+      <a className="skip" href="#main">
+        {t("dashboard")}
+      </a>
+      <aside className={mobile ? "sidebar open" : "sidebar"}>
+        <a className="brand" href="#dashboard" onClick={() => go("dashboard")}>
+          <span className="brand-mark">
+            <Wrench size={23} />
+          </span>
+          huoltopilotti<span className="brand-period">.</span>
+        </a>
+        <button className="workspace" onClick={() => go("settings")}>
+          <span className="workspace-icon">
+            <Factory size={19} />
+          </span>
+          <span>
+            <strong>Nordic Works Oy</strong>
+            <small>{t("demo")} · Business</small>
+          </span>
+          <ChevronDown size={15} />
+        </button>
+        <div className="nav-label">
+          {lang === "fi"
+            ? "TYÖTILA"
+            : lang === "de"
+              ? "ARBEITSBEREICH"
+              : "WORKSPACE"}
+        </div>
+        <nav>
+          {nav.map((n) => (
+            <button
+              key={n.page}
+              onClick={() => go(n.page)}
+              className={page === n.page ? "nav-item active" : "nav-item"}
+            >
+              <n.icon size={19} />
+              {t(n.page)}
+              {n.page === "jobs" && (
+                <span className="nav-count">{active.length}</span>
+              )}
+              {n.page === "radar" && <span className="new-dot" />}
+            </button>
+          ))}
+        </nav>
+        <div className="sidebar-bottom">
+          <div className="demo-card">
+            <span className="demo-tag">
+              <span />
+              {t("demo")}
+            </span>
+            <p>{t("demoText")}</p>
+            <button onClick={() => setModal("help")}>
+              {t("help")} <ArrowUpRight size={14} />
+            </button>
+          </div>
+          <button className="nav-item" onClick={() => go("settings")}>
+            <Settings size={19} />
+            {t("settings")}
+          </button>
+          <button className="profile" onClick={() => go("settings")}>
+            <span className="avatar">AK</span>
+            <span>
+              <strong>Aleksi Korhonen</strong>
+              <small>{t("technician")}</small>
+            </span>
+            <ChevronDown size={15} />
+          </button>
+        </div>
+      </aside>
+      {mobile && (
+        <button
+          aria-label={t("close")}
+          className="scrim"
+          onClick={() => setMobile(false)}
+        />
+      )}
+      <div className="main-shell">
+        <header className="topbar">
+          <button
+            className="icon-button mobile-menu"
+            aria-label={t("menu")}
+            aria-expanded={mobile}
+            onClick={() => setMobile(!mobile)}
+          >
+            <Menu size={22} />
+          </button>
+          <div className="breadcrumb">
+            {lang === "fi"
+              ? "Työtila"
+              : lang === "de"
+                ? "Arbeitsbereich"
+                : "Workspace"}{" "}
+            <ChevronRight size={13} />
+            <strong>{t(page)}</strong>
+          </div>
+          <div className="top-actions">
+            <span className="demo-pill">
+              <span />
+              {t("demo")}
+            </span>
+            <select
+              aria-label={t("language")}
+              value={lang}
+              onChange={(e) => setLang(e.target.value as Lang)}
+            >
+              <option value="fi">FI</option>
+              <option value="en">EN</option>
+              <option value="de">DE</option>
+            </select>
+            <button
+              className="icon-button"
+              aria-label={t("theme")}
+              onClick={() => setDark(!dark)}
+            >
+              {dark ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
+            <span className="avatar small">AK</span>
+          </div>
+        </header>
+        <main id="main">
+          <div className="page-heading">
+            <div>
+              <div className="eyebrow">
+                {page === "dashboard"
+                  ? new Date().toLocaleDateString(lang, {
+                      weekday: "long",
+                      day: "numeric",
+                      month: "long",
+                    })
+                  : "NORDIC WORKS OY"}
+              </div>
+              <h1>
+                {page === "dashboard" ? t("hello") : t(page)}
+                {page === "dashboard" && <span className="heading-dot">.</span>}
+              </h1>
+              <p>
+                {page === "dashboard"
+                  ? t("intro")
+                  : page === "radar"
+                    ? t("radarText")
+                    : page === "inventory"
+                      ? t("readinessText")
+                      : t("demoText")}
+              </p>
+            </div>
+            {page === "radar" && (
+              <Button
+                onClick={() => {
+                  setEditing(null);
+                  setModal("fault");
+                }}
+              >
+                <Plus size={17} />
+                {t("newFault")}
+              </Button>
+            )}
+            {page !== "radar" && page !== "settings" && (
+              <Button
+                onClick={() =>
+                  page === "assets"
+                    ? open("asset")
+                    : page === "inventory"
+                      ? open("item")
+                      : page === "reports"
+                        ? exportCsv()
+                        : open("job")
+                }
+              >
+                <Plus size={17} />
+                {page === "assets"
+                  ? t("newAsset")
+                  : page === "inventory"
+                    ? t("addItem")
+                    : page === "reports"
+                      ? t("export")
+                      : t("newJob")}
+              </Button>
+            )}
+          </div>
+          {page === "dashboard" && (
+            <>
+              <div className="stats-grid">
+                {[
+                  {
+                    label: "upcoming",
+                    value: active.length,
+                    icon: CalendarDays,
+                    detail: "week",
+                    class: "green",
+                    action: () => go("jobs"),
+                  },
+                  {
+                    label: "overdue",
+                    value: overdue.length,
+                    icon: Clock,
+                    detail: "attention",
+                    class: "orange",
+                    action: () => {
+                      go("jobs");
+                      setFilter("overdue");
+                    },
+                  },
+                  {
+                    label: "assets",
+                    value: store.assets.length,
+                    icon: Box,
+                    detail: "operational",
+                    class: "blue",
+                    action: () => go("assets"),
+                  },
+                  {
+                    label: "missing",
+                    value: low.length,
+                    icon: Package,
+                    detail: "low",
+                    class: "purple",
+                    action: () => go("inventory"),
+                  },
+                ].map((s) => (
+                  <button
+                    className="stat-card"
+                    key={s.label}
+                    onClick={s.action}
+                  >
+                    <div className="stat-top">
+                      <span>{t(s.label as Key)}</span>
+                      <span className={"stat-icon " + s.class}>
+                        <s.icon size={19} />
+                      </span>
+                    </div>
+                    <strong className="stat-value">
+                      {s.value.toString().padStart(2, "0")}
+                    </strong>
+                    <div className="stat-bottom">
+                      <span className={s.class}>
+                        {s.class === "orange" ? (
+                          <span className="dot" />
+                        ) : (
+                          <span className="mini-line" />
+                        )}
+                        {t(s.detail as Key)}
+                      </span>
+                      <ArrowUpRight size={16} />
+                    </div>
+                  </button>
+                ))}
+              </div>
+              <div className="dashboard-layout">
+                <section className="card jobs-card">
+                  <div className="section-heading">
+                    <div>
+                      <h2>
+                        {t("upcoming")}{" "}
+                        <span className="count">{active.length}</span>
+                      </h2>
+                      <p>
+                        {lang === "fi"
+                          ? "Pidä tärkeimmät työt liikkeessä."
+                          : lang === "de"
+                            ? "Die wichtigsten Aufgaben im Blick."
+                            : "Keep your most important work moving."}
+                      </p>
+                    </div>
+                    <button className="text-button" onClick={() => go("jobs")}>
+                      {t("all")}
+                      <ArrowRight size={15} />
+                    </button>
+                  </div>
+                  {jobTable(active.slice(0, 4))}
+                  <button className="card-footer" onClick={() => go("jobs")}>
+                    {t("jobs")}
+                    <ArrowRight size={15} />
+                  </button>
+                </section>
+                <section className="readiness-card">
+                  <div className="readiness-heading">
+                    <span className="readiness-symbol">
+                      <ShieldCheck size={23} />
+                    </span>
+                    <span className="live-dot" />
+                  </div>
+                  <h2>{t("readiness")}</h2>
+                  <p>{t("readinessText")}</p>
+                  <div className="readiness-meter">
+                    <strong>
+                      {active.filter((j) => readiness(j) === "ready").length}
+                      <small> / {active.length}</small>
+                    </strong>
+                    <span>{t("ready").toLowerCase()}</span>
+                  </div>
+                  <div className="progress-track">
+                    <span
+                      style={{
+                        width: `${active.length ? (active.filter((j) => readiness(j) === "ready").length / active.length) * 100 : 0}%`,
+                      }}
+                    />
+                  </div>
+                  <div className="readiness-summary">
+                    <span>
+                      <span className="dot amber-dot" />
+                      {t("needs")}
+                    </span>
+                    <b>
+                      {active.filter((j) => readiness(j) === "needs").length}
+                    </b>
+                  </div>
+                  <div className="readiness-summary">
+                    <span>
+                      <span className="dot gray-dot" />
+                      {t("unchecked")}
+                    </span>
+                    <b>
+                      {
+                        active.filter(
+                          (j) =>
+                            readiness(j) !== "ready" &&
+                            readiness(j) !== "needs",
+                        ).length
+                      }
+                    </b>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setSelected(active[0]?.id || null);
+                      setCompletion(false);
+                    }}
+                  >
+                    {t("preparation")}
+                    <ArrowRight size={17} />
+                  </button>
+                </section>
+              </div>
+              <div className="bottom-grid">
+                <section className="card radar-card">
+                  <div className="radar-art">
+                    <Radio size={32} />
+                    <span />
+                    <i />
+                  </div>
+                  <div>
+                    <span className="eyebrow">
+                      {lang === "fi"
+                        ? "RATKAISU LÖYTYY HISTORIASTA"
+                        : lang === "de"
+                          ? "AUS ERFAHRUNG LERNEN"
+                          : "LET HISTORY HELP"}
+                    </span>
+                    <h2>{t("radar")}</h2>
+                    <p>{t("radarText")}</p>
+                    <button className="text-button" onClick={() => go("radar")}>
+                      {t("tryRadar")}
+                      <ArrowRight size={15} />
+                    </button>
+                  </div>
+                </section>
+                <section className="card activity-card">
+                  <div className="section-heading">
+                    <h2>{t("recent")}</h2>
+                    <span className="activity-dot" />
+                  </div>
+                  {store.events.length ? (
+                    store.events.slice(0, 2).map((e) => (
+                      <div className="activity" key={e.id}>
+                        <span className="activity-icon">
+                          <Check size={16} />
+                        </span>
+                        <div>
+                          <strong>{e.text}</strong>
+                          <small>
+                            {t("completed")} ·{" "}
+                            {new Date(e.at).toLocaleDateString(lang)}
+                          </small>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="activity">
+                      <span className="activity-icon">
+                        <Wrench size={16} />
+                      </span>
+                      <div>
+                        <strong>{store.jobs[1].name}</strong>
+                        <small>
+                          {t("progress")} · {t("demo")}
+                        </small>
+                      </div>
+                    </div>
+                  )}
+                  <div className="activity">
+                    <span className="activity-icon amber">
+                      <AlertTriangle size={16} />
+                    </span>
+                    <div>
+                      <strong>{t("low")}: SKF 6205-2RS</strong>
+                      <small>B-03 · {t("demo")}</small>
+                    </div>
+                  </div>
+                </section>
+              </div>
+              <div className="dashboard-foot">
+                <span>
+                  <span className="dot" />
+                  {t("demoText")}
+                </span>
+                <span>Huoltopilotti · 0.1</span>
+              </div>
+            </>
+          )}
+          {(page === "jobs" || page === "assets" || page === "inventory") && (
+            <div className="toolbar">
+              <div className="search-field">
+                <Search size={18} />
+                <input
+                  aria-label={t("search")}
+                  placeholder={t("search")}
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                />
+              </div>
+              {page === "jobs" && (
+                <select
+                  aria-label={t("status")}
+                  value={filter}
+                  onChange={(e) => setFilter(e.target.value)}
+                >
+                  <option value="all">{t("all")}</option>
+                  {(
+                    ["planned", "progress", "completed", "overdue"] as const
+                  ).map((s) => (
+                    <option key={s} value={s}>
+                      {t(s)}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
+          {page === "jobs" && (
+            <section className="card">{jobTable(filteredJobs)}</section>
+          )}
+          {page === "assets" && (
+            <div className="asset-grid">
+              {store.assets
+                .filter((a) =>
+                  (a.name + " " + a.location)
+                    .toLowerCase()
+                    .includes(query.toLowerCase()),
+                )
+                .map((a, i) => (
+                  <section className="card asset-card" key={a.id}>
+                    <div className={"asset-visual asset-visual-" + (i % 3)}>
+                      <Factory size={58} strokeWidth={1.2} />
+                      <span className={"badge " + a.status}>{t(a.status)}</span>
+                    </div>
+                    <div className="asset-info">
+                      <small>
+                        {a.id.startsWith("a")
+                          ? "EQ-00" + a.id.slice(1)
+                          : a.id.slice(0, 8)}
+                      </small>
+                      <h2>{a.name}</h2>
+                      <p>
+                        {a.manufacturer} · {a.model}
+                      </p>
+                      <div className="asset-bottom">
+                        <span>{a.location}</span>
+                        <Button
+                          variant="outline"
+                          onClick={() => open("asset", a)}
+                        >
+                          {t("edit")}
+                          <ChevronRight size={15} />
+                        </Button>
+                      </div>
+                      <button
+                        className="text-button"
+                        onClick={() => {
+                          go("jobs");
+                          setQuery(a.name);
+                        }}
+                      >
+                        {t("history")}
+                        <ArrowRight size={15} />
+                      </button>
+                    </div>
+                  </section>
+                ))}
+            </div>
+          )}
+          {page === "inventory" && (
+            <div className="card table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    {[
+                      "name",
+                      "type",
+                      "quantity",
+                      "reservation",
+                      "storage",
+                      "description",
+                      "edit",
+                    ].map((k) => (
+                      <th key={k}>{t(k as Key)}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {store.items
+                    .filter((i) =>
+                      (i.name + " " + i.spec)
+                        .toLowerCase()
+                        .includes(query.toLowerCase()),
+                    )
+                    .map((i) => (
+                      <tr key={i.id}>
+                        <td>
+                          <strong>{i.name}</strong>
+                          <small>
+                            {i.manufacturer} · {i.partNumber}
+                          </small>
+                        </td>
+                        <td>{t(i.type)}</td>
+                        <td>
+                          <span
+                            className={
+                              i.quantity - i.reserved < 2 ? "danger-text" : ""
+                            }
+                          >
+                            {i.quantity}
+                          </span>
+                        </td>
+                        <td>{i.reserved}</td>
+                        <td>{i.location}</td>
+                        <td>
+                          {i.spec}
+                          <small>{i.calibration}</small>
+                        </td>
+                        <td>
+                          <Button
+                            variant="outline"
+                            onClick={() => open("item", i)}
+                          >
+                            {t("edit")}
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {page === "radar" && (
+            <div className="radar-layout">
+              <section className="card padded">
+                <div className="feature-icon">
+                  <Radio size={28} />
+                </div>
+                <h2>{t("symptoms")}</h2>
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    setSearched(true);
+                  }}
+                >
+                  <label htmlFor="symptoms">{t("description")}</label>
+                  <textarea
+                    id="symptoms"
+                    required
+                    minLength={4}
+                    value={symptoms}
+                    onChange={(e) => {
+                      setSymptoms(e.target.value);
+                      setSearched(false);
+                    }}
+                    placeholder={local(store.faults[0].symptoms, lang)}
+                  />
+                  <Button type="submit">
+                    <Search size={17} />
+                    {t("find")}
+                  </Button>
+                </form>
+                <p className="notice">{t("limits")}</p>
+              </section>
+              <section>
+                {searched &&
+                  matchFaults(symptoms, store.faults, "demo").map(
+                    ({ fault, terms }) => (
+                      <article className="card padded match" key={fault.id}>
+                        <span className="badge operational">
+                          {fault.id} · {fault.date} · {t("demo")}
+                        </span>
+                        <h2>{assetName(fault.assetId)}</h2>
+                        <p>{local(fault.symptoms, lang)}</p>
+                        <h3>{t("cause")}</h3>
+                        <p>{local(fault.cause, lang)}</p>
+                        <h3>{t("reason")}</h3>
+                        <p>{terms.join(", ")}</p>
+                        <h3>{t("check")}</h3>
+                        <p>{local(fault.check, lang)}</p>
+                        <p className="notice">{t("limits")}</p>
+                      </article>
+                    ),
+                  )}
+                {searched &&
+                  !matchFaults(symptoms, store.faults, "demo").length && (
+                    <div className="card padded">{t("noMatch")}</div>
+                  )}
+              </section>
+            </div>
+          )}
+          {page === "reports" && (
+            <section className="card padded">
+              <div className="section-heading">
+                <h2>{t("history")}</h2>
+                <div className="button-row">
+                  <Button variant="outline" onClick={exportCsv}>
+                    <Download size={16} />
+                    {t("export")}
+                  </Button>
+                  <Button onClick={() => window.print()}>{t("print")}</Button>
+                </div>
+              </div>
+              {jobTable(store.jobs.filter((j) => j.status === "completed"))}
+              <h3>{t("overdue")}</h3>
+              {jobTable(overdue)}
+              <h3>{t("actual")}</h3>
+              {store.jobs
+                .filter((j) => j.status === "completed")
+                .map((j) => (
+                  <p key={j.id}>
+                    {j.name}:{" "}
+                    {Object.entries(j.actual)
+                      .map(
+                        ([key, n]) =>
+                          `${store.items.find((i) => i.id === key)?.name}: ${n}`,
+                      )
+                      .join(", ") || "—"}
+                  </p>
+                ))}
+            </section>
+          )}
+          {page === "templates" && (
+            <section className="card padded">
+              <span className="badge operational">
+                {t("version")} {store.templateVersion}
+              </span>
+              <h2>
+                {lang === "fi"
+                  ? "Laakerihuollon valmistelu"
+                  : lang === "de"
+                    ? "Vorbereitung der Lagerwartung"
+                    : "Bearing maintenance preparation"}
+              </h2>
+              <p className="notice">{t("proposal")}</p>
+              {store.templateRequirements.map((r) => (
+                <div className="template-row" key={r.id}>
+                  <CheckCircle2 size={19} />
+                  <div>
+                    <small>{t(r.category)}</small>
+                    <p>{local(r.label, lang)}</p>
+                    <small>
+                      {t("quantity")}: {r.quantity}
+                    </small>
+                  </div>
+                </div>
+              ))}
+              {store.jobs.some((j) => j.status === "completed") && (
+                <Button
+                  onClick={() => {
+                    const latest = store.jobs
+                      .filter((j) => j.status === "completed")
+                      .sort((a, b) =>
+                        (a.completedAt || "").localeCompare(
+                          b.completedAt || "",
+                        ),
+                      )
+                      .at(-1);
+                    if (latest && window.confirm(t("approveConfirm"))) {
+                      const reqs = store.templateRequirements
+                        .map((r) => ({
+                          ...r,
+                          quantity: r.itemId
+                            ? (latest.actual[r.itemId] ?? r.quantity)
+                            : r.quantity,
+                          state: "unchecked" as const,
+                        }))
+                        .filter((r) => r.quantity > 0);
+                      change({
+                        ...store,
+                        templateVersion: store.templateVersion + 1,
+                        templateRequirements: reqs,
+                        templateHistory: [
+                          ...store.templateHistory,
+                          {
+                            version: store.templateVersion,
+                            approvedAt: new Date().toISOString(),
+                            requirements: store.templateRequirements,
+                          },
+                        ],
+                      });
+                    }
+                  }}
+                >
+                  {t("approve")}
+                </Button>
+              )}
+              <h3>{t("history")}</h3>
+              {store.templateHistory.map((v) => (
+                <p key={v.version}>
+                  {t("version")} {v.version} ·{" "}
+                  {new Date(v.approvedAt).toLocaleDateString(lang)}
+                </p>
+              ))}
+            </section>
+          )}
+          {page === "settings" && (
+            <div className="settings-grid">
+              <section className="card padded">
+                <h2>{t("settings")}</h2>
+                <label>
+                  {t("language")}
+                  <select
+                    value={lang}
+                    onChange={(e) => setLang(e.target.value as Lang)}
+                  >
+                    <option value="fi">Suomi</option>
+                    <option value="en">English</option>
+                    <option value="de">Deutsch</option>
+                  </select>
+                </label>
+                <Button variant="outline" onClick={() => setDark(!dark)}>
+                  <Sun size={17} />
+                  {t("theme")}
+                </Button>
+                <h3>{t("demo")}</h3>
+                <p>{t("demoText")}</p>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    if (window.confirm(t("resetConfirm"))) {
+                      change(seed());
+                    }
+                  }}
+                >
+                  {t("reset")}
+                </Button>
+              </section>
+              <section className="card padded">
+                <h2>{t("plan")}</h2>
+                <p className="notice">{t("disabled")}</p>
+                {[
+                  ["Free", "0 €", "5"],
+                  ["Pro", "19 € / month", "100"],
+                  ["Business", "49 € / month", "500"],
+                ].map(([name, price, n]) => (
+                  <div className="plan" key={name}>
+                    <strong>{name}</strong>
+                    <span>
+                      {price.replace(
+                        "month",
+                        lang === "fi"
+                          ? "kk"
+                          : lang === "de"
+                            ? "Monat"
+                            : "month",
+                      )}
+                    </span>
+                    <small>
+                      {n} {t("assets").toLowerCase()}
+                    </small>
+                  </div>
+                ))}
+                <h3>{t("team")}</h3>
+                <p>Aleksi Korhonen · {t("technician")}</p>
+              </section>
+            </div>
+          )}
+        </main>
+      </div>
+      <Dialog.Root
+        open={modal !== null}
+        onOpenChange={(o) => {
+          if (!o) {
+            setModal(null);
+            localStorage.setItem("hp-welcome", "1");
+          }
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="dialog-overlay" />
+          <Dialog.Content className="dialog">
+            <Dialog.Title>
+              {modal === "onboarding"
+                ? t("onboarding")
+                : modal === "help"
+                  ? t("help")
+                  : modal === "asset"
+                    ? t(editing ? "edit" : "newAsset")
+                    : modal === "item"
+                      ? t(editing ? "edit" : "addItem")
+                      : modal === "fault"
+                        ? t("newFault")
+                        : t(editing ? "edit" : "newJob")}
+            </Dialog.Title>
+            <Dialog.Description className="dialog-description">
+              {modal === "onboarding"
+                ? t("onboardingText")
+                : modal === "help"
+                  ? t("helpText")
+                  : t("demoText")}
+            </Dialog.Description>
+            <Dialog.Close className="dialog-close" aria-label={t("close")}>
+              <X size={20} />
+            </Dialog.Close>
+            {modal === "onboarding" || modal === "help" ? (
+              <>
+                <div className="onboarding-steps">
+                  {[Box, Wrench, ShieldCheck].map((Icon, i) => (
+                    <div key={i}>
+                      <Icon size={24} />
+                      <span>
+                        {t((["assets", "jobs", "readiness"] as const)[i])}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <Button
+                  onClick={() => {
+                    localStorage.setItem("hp-welcome", "1");
+                    setModal(null);
+                  }}
+                >
+                  {t("start")}
+                  <ArrowRight size={17} />
+                </Button>
+              </>
+            ) : (
+              <form onSubmit={submit} className="edit-form">
+                <label>
+                  {t(modal === "fault" ? "symptoms" : "name")}
+                  <input
+                    name="name"
+                    required
+                    maxLength={120}
+                    defaultValue={editing?.name}
+                  />
+                </label>
+                {modal === "fault" && (
+                  <>
+                    <label>
+                      {t("equipment")}
+                      <select required name="assetId">
+                        {store.assets.map((a) => (
+                          <option value={a.id} key={a.id}>
+                            {a.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      {t("confirmedCause")}
+                      <textarea name="cause" required minLength={5} />
+                    </label>
+                    <label className="checkbox-label">
+                      <input type="checkbox" required />
+                      {t("verified")}
+                    </label>
+                  </>
+                )}
+                {modal === "asset" && (
+                  <>
+                    <div className="form-grid">
+                      {(
+                        ["manufacturer", "model", "serial", "location"] as const
+                      ).map((k) => (
+                        <label key={k}>
+                          {t(k)}
+                          <input
+                            name={k}
+                            defaultValue={(editing as Asset)?.[k]}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                    <label>
+                      {t("description")}
+                      <textarea
+                        name="description"
+                        defaultValue={(editing as Asset)?.description}
+                      />
+                    </label>
+                  </>
+                )}
+                {modal === "job" && (
+                  <>
+                    <label>
+                      {t("equipment")}
+                      <select
+                        required
+                        name="assetId"
+                        defaultValue={(editing as Job)?.assetId}
+                      >
+                        {store.assets.map((a) => (
+                          <option value={a.id} key={a.id}>
+                            {a.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="form-grid">
+                      <label>
+                        {t("due")}
+                        <input
+                          required
+                          type="date"
+                          name="due"
+                          defaultValue={(editing as Job)?.due || today}
+                        />
+                      </label>
+                      <label>
+                        {t("priority")}
+                        <select
+                          name="priority"
+                          defaultValue={(editing as Job)?.priority || "normal"}
+                        >
+                          <option value="normal">{t("normal")}</option>
+                          <option value="high">{t("high")}</option>
+                        </select>
+                      </label>
+                      <label>
+                        {t("technician")}
+                        <input
+                          name="technician"
+                          required
+                          defaultValue={
+                            (editing as Job)?.technician || "Aleksi Korhonen"
+                          }
+                        />
+                      </label>
+                      <label>
+                        {t("duration")}
+                        <input
+                          type="number"
+                          min="1"
+                          max="10000"
+                          required
+                          name="duration"
+                          defaultValue={(editing as Job)?.duration || 60}
+                        />
+                      </label>
+                    </div>
+                    <label>
+                      {t("recurrence")}
+                      <input
+                        type="number"
+                        name="recurrence"
+                        min="0"
+                        max="3650"
+                        required
+                        defaultValue={(editing as Job)?.recurrence || 0}
+                      />
+                    </label>
+                  </>
+                )}
+                {modal === "item" && (
+                  <>
+                    <div className="form-grid">
+                      <label>
+                        {t("type")}
+                        <select
+                          name="type"
+                          defaultValue={(editing as Item)?.type}
+                        >
+                          {(["tools", "parts", "consumables"] as const).map(
+                            (k) => (
+                              <option key={k} value={k}>
+                                {t(k)}
+                              </option>
+                            ),
+                          )}
+                        </select>
+                      </label>
+                      <label>
+                        {t("quantity")}
+                        <input
+                          type="number"
+                          name="quantity"
+                          min="0"
+                          step="1"
+                          required
+                          defaultValue={(editing as Item)?.quantity || 0}
+                        />
+                      </label>
+                      <label>
+                        {t("storage")}
+                        <input
+                          name="location"
+                          required
+                          defaultValue={(editing as Item)?.location}
+                        />
+                      </label>
+                      <label>
+                        {t("manufacturer")}
+                        <input
+                          name="manufacturer"
+                          defaultValue={(editing as Item)?.manufacturer}
+                        />
+                      </label>
+                      <label>
+                        {lang === "fi"
+                          ? "Osanumero"
+                          : lang === "de"
+                            ? "Teilenummer"
+                            : "Part number"}
+                        <input
+                          name="partNumber"
+                          defaultValue={(editing as Item)?.partNumber}
+                        />
+                      </label>
+                      <label>
+                        {lang === "fi"
+                          ? "Kalibrointi voimassa"
+                          : lang === "de"
+                            ? "Kalibrierung gültig bis"
+                            : "Calibration valid until"}
+                        <input
+                          type="date"
+                          name="calibration"
+                          defaultValue={(editing as Item)?.calibration}
+                        />
+                      </label>
+                    </div>
+                    <label>
+                      {t("description")}
+                      <input
+                        name="spec"
+                        defaultValue={(editing as Item)?.spec}
+                      />
+                    </label>
+                    <label>
+                      {lang === "fi"
+                        ? "Yhteensopivat laitteet"
+                        : lang === "de"
+                          ? "Kompatible Anlagen"
+                          : "Compatible equipment"}
+                      <input
+                        name="compatible"
+                        defaultValue={(editing as Item)?.compatible}
+                      />
+                    </label>
+                    <label>
+                      {lang === "fi"
+                        ? "Hyväksytyt vaihtoehdot"
+                        : lang === "de"
+                          ? "Freigegebene Alternativen"
+                          : "Approved alternatives"}
+                      <input
+                        name="alternatives"
+                        defaultValue={(editing as Item)?.alternatives}
+                      />
+                    </label>
+                  </>
+                )}
+                {error && <p role="alert">{error}</p>}
+                <div className="dialog-actions">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setModal(null)}
+                  >
+                    {t("cancel")}
+                  </Button>
+                  <Button type="submit">{t("save")}</Button>
+                </div>
+              </form>
+            )}
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+      <Dialog.Root
+        open={!!chosen}
+        onOpenChange={(o) => {
+          if (!o) {
+            setSelected(null);
+            setError("");
+          }
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="dialog-overlay" />
+          <Dialog.Content className="dialog job-dialog">
+            <Dialog.Title>{chosen?.name}</Dialog.Title>
+            <Dialog.Description className="dialog-description">
+              {chosen && assetName(chosen.assetId)} · {chosen?.technician} ·{" "}
+              {chosen?.duration} min
+            </Dialog.Description>
+            <Dialog.Close className="dialog-close" aria-label={t("close")}>
+              <X size={20} />
+            </Dialog.Close>
+            <p className="safety-notice">
+              <ShieldCheck size={22} />
+              {t("safe")}
+            </p>
+            {chosen && (
+              <>
+                <div className="section-heading">
+                  <h2>{t("readiness")}</h2>
+                  <span className="badge planned">{t(readiness(chosen))}</span>
+                </div>
+                {chosen.requirements.map((r) => {
+                  const item = store.items.find((i) => i.id === r.itemId);
+                  return (
+                    <div className="requirement" key={r.id}>
+                      <div>
+                        <small>{t(r.category)}</small>
+                        <p>{local(r.label, lang)}</p>
+                        <small>
+                          {t("quantity")}: {r.quantity}
+                        </small>
+                        {item && (
+                          <small>
+                            {item.location} · {t("quantity")}: {item.quantity} ·{" "}
+                            {item.spec}
+                            {item.calibration ? " · " + item.calibration : ""}
+                          </small>
+                        )}
+                      </div>
+                      <select
+                        aria-label={local(r.label, lang)}
+                        disabled={chosen.status === "completed"}
+                        value={r.state}
+                        onChange={(e) =>
+                          change({
+                            ...store,
+                            jobs: store.jobs.map((j) =>
+                              j.id === chosen.id
+                                ? {
+                                    ...j,
+                                    requirements: j.requirements.map((x) =>
+                                      x.id === r.id
+                                        ? {
+                                            ...x,
+                                            state: e.target
+                                              .value as typeof r.state,
+                                          }
+                                        : x,
+                                    ),
+                                  }
+                                : j,
+                            ),
+                          })
+                        }
+                      >
+                        {(
+                          ["unchecked", "ready", "needs", "review"] as const
+                        ).map((s) => (
+                          <option key={s} value={s}>
+                            {t(s)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  );
+                })}
+                {chosen.status !== "completed" && (
+                  <div className="button-row">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        change({
+                          ...store,
+                          jobs: store.jobs.map((j) =>
+                            j.id === chosen.id
+                              ? { ...j, status: "progress" }
+                              : j,
+                          ),
+                        });
+                      }}
+                    >
+                      {t("progress")}
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        setCompletion(true);
+                        setActual({});
+                      }}
+                    >
+                      {t("complete")}
+                    </Button>
+                  </div>
+                )}
+                {completion && (
+                  <form
+                    className="completion"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      finish();
+                    }}
+                  >
+                    <h3>{t("actual")}</h3>
+                    {store.items.map((i) => (
+                      <label key={i.id}>
+                        {i.name}{" "}
+                        <small>
+                          ({t("quantity")}: {i.quantity})
+                        </small>
+                        <input
+                          type="number"
+                          min="0"
+                          max={i.quantity}
+                          step="1"
+                          value={actual[i.id] || 0}
+                          onChange={(e) =>
+                            setActual({
+                              ...actual,
+                              [i.id]: Number(e.target.value),
+                            })
+                          }
+                        />
+                      </label>
+                    ))}
+                    <label>
+                      {t("notes")}
+                      <textarea
+                        required
+                        value={notes}
+                        onChange={(e) => setNotes(e.target.value)}
+                      />
+                    </label>
+                    <p className="notice">{t("proposal")}</p>
+                    {error && (
+                      <p role="alert" className="danger-text">
+                        {error}
+                      </p>
+                    )}
+                    <Button type="submit">{t("confirm")}</Button>
+                  </form>
+                )}
+                {chosen.status === "completed" && (
+                  <div className="completion">
+                    <h3>{t("notes")}</h3>
+                    <p>{chosen.notes}</p>
+                    <h3>{t("actual")}</h3>
+                    {Object.entries(chosen.actual).map(([key, n]) => (
+                      <p key={key}>
+                        {store.items.find((i) => i.id === key)?.name}: {n}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+      {toast && (
+        <div className="toast" role="status">
+          <CheckCircle2 size={18} />
+          {toast}
+        </div>
+      )}
+      {error && !selected && (
+        <div className="toast" role="alert">
+          {error}
+        </div>
+      )}
+      <button
+        className="help-fab"
+        aria-label={t("help")}
+        onClick={() => setModal("help")}
+      >
+        <HelpCircle size={21} />
+      </button>
+    </div>
+  );
+}

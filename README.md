@@ -1,6 +1,6 @@
 # Huoltopilotti
 
-Finnish-first maintenance management with Finnish, English and German interfaces. React 19, TypeScript, Vite, Tailwind, Radix/shadcn-style components and Lucide. Configured production URL: **https://585.fi/huolto/**.
+Finnish-first maintenance management with Finnish, English and German interfaces. React 19, TypeScript, Vite, Tailwind, Radix/shadcn-style components and Lucide. Configured production URL: **https://brunbar.fi/**.
 
 ## Private two-user deployment
 
@@ -17,7 +17,7 @@ npm ci
 npm run dev
 ```
 
-Open the printed URL at `/huolto/`. Without public Supabase configuration, only the clearly labeled synthetic demo is available. With configuration, the default route is private sign-in; `/huolto/?demo=1` opens the isolated browser-local demo. Never enter confidential data in demo mode.
+Open the printed URL at `/`. Without public Supabase configuration, only the clearly labeled synthetic demo is available. With configuration, the default route is private sign-in; `/?demo=1` opens the isolated browser-local demo. Never enter confidential data in demo mode.
 
 Copy `.env.example` to gitignored `.env.local` and set **public** Supabase URL/publishable key to test configured mode. Do not put secret/service-role keys in `VITE_*` variables. Build-time validation rejects known privileged key formats. Setting public config is not sufficient by itself: apply migrations, disable hosted public signup, provision the owner and deploy the invitation Edge Function using the setup guide.
 
@@ -42,6 +42,8 @@ npm test
 npm run test:integration
 npm run test:db               # disposable Docker PostgreSQL, no production credentials
 npm run build
+npm run verify:build
+npm run test:deployment
 npx playwright install --with-deps chromium
 npm run test:e2e
 ```
@@ -50,6 +52,8 @@ npm run test:e2e
 
 ## Deployment and remaining work
 
-The existing GitHub Pages workflow remains manual-only from `main`. It builds for lowercase `/huolto/` and uses public GitHub repository variables described in `docs/PRIVATE_SETUP.md`. Nothing is deployed or merged automatically by a PR. Existing custom-domain/DNS/path mapping is preserved and must be verified by the operator.
+The source-repository workflow only validates; it cannot deploy Pages. A separate manual-only workflow is locked to the dedicated `makkelii/huoltopilotti-brunbar` repository, the `main` branch and confirmed `brunbar.fi` Pages domain. The CNAME template is staged outside `public/` and copied only into the dedicated deployment artifact. See `docs/BRUNBAR_DEPLOYMENT.md` for Finnish setup, DNS, HTTPS, cutover and rollback instructions, and `docs/HOSTING_INSPECTION.md` for verification limits and protection of 585.fi.
 
-See `docs/DEPLOYMENT.md`, `docs/SECURITY.md` and `docs/ROADMAP.md`. Production credentials/setup and live acceptance testing are still required. Photos/QR workflows, advanced reservations, background reminders, arbitrary multi-template selection, data-deletion UI and billing are outside this private-deployment change. Readiness is never a safety permit; historical retrieval is never a diagnosis.
+This branch includes PR #2 (still open at inspection), preserving all Supabase implementation. Do not copy the old demo-only main into the new repository. No database schema or bootstrap reset is introduced here. The existing `invite-technician` function is retained unchanged; brunbar uses `invite-technician-brunbar` with `BRUNBAR_APP_ORIGIN` so legacy `APP_ORIGIN` remains untouched.
+
+No live hosting, custom domain, DNS, Auth settings or database has been changed. Live Supabase configuration, email delivery and operator acceptance tests remain necessary. Billing stays disabled.

@@ -1,13 +1,15 @@
-# Executed validation — private Supabase development
+# Executed validation — brunbar.fi preparation
 
-Tests ran in the local implementation environment with Node 24.19, npm 11.9, installed Chromium and Docker PostgreSQL 16.15. No live Supabase project credentials were supplied. No live accounts were created, no real invitations/recovery messages were sent, and no deployment or payment activation was performed.
+Tests ran in the local implementation environment with Node 24.19, npm 11.9, installed Chromium and Docker PostgreSQL 16.15. No live Supabase project credentials were supplied. No Pages/DNS/custom-domain settings were changed. No live accounts were created, no real invitations/recovery messages were sent, and no deployment or payment activation was performed.
 
 | Command | Result |
 | --- | --- |
-| `npm run build` | Passed; lowercase `/huolto/` asset base, Supabase split into its own bundle |
+| `npm run build` | Passed; root `/assets/` asset base, Supabase split into its own bundle |
+| `npm run verify:build` | Passed; emitted root asset files exist, no legacy application deployment URLs in browser JS |
+| `npm run test:deployment` | 12 passed: dedicated repo/ref/manual approval/domain guards, validation-only source workflow, staged CNAME and build validation |
 | `npm run lint` | Passed |
 | `npm run typecheck` | Passed |
-| `npm test` | 36 passed across domain, demo UI, authentication, repository, invitation-handler and public-config tests |
+| `npm test` | 37 passed across domain, demo UI, authentication, repository, brunbar invitation-handler and public-config tests |
 | `npm run test:integration` | 15 passed (UI/authentication/repository subset of the above) |
 | `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/chromium npm run test:e2e` | 6 passed: three scenarios on desktop and mobile Chromium |
 | `npm run test:db` | Passed: both migrations, tenant permissions, shared records, invitations, and real concurrent last-part consumption |
@@ -30,3 +32,9 @@ Early failures exposed asynchronous demo test expectations, an invitation fixtur
 Hosted Supabase Auth settings, public signup disablement, SMTP delivery, recovery/invite token expiry and redirect allowlists, deployed Edge Functions, production RLS grants as installed in the selected project, Storage HTTP access, custom-domain DNS/proxy mapping, live two-device sessions and hosting security headers require the PRIVATE_SETUP.md acceptance checklist. The Deno entrypoint itself was not executed in the Supabase Edge runtime; its extracted handler was tested in Vitest. No live success is inferred from mocks or local SQL fixtures.
 
 No full WCAG audit, Safari/Firefox run, high-volume load test, background reminders, advanced reservations or Stripe integration is claimed.
+
+## Hosting and preservation checks
+
+PR #2 was open/unmerged at inspection; this branch includes its exact head (`84fdfa6`). `git diff 84fdfa6 -- supabase/migrations supabase/private-bootstrap.sql supabase/functions/invite-technician` produced no changes. Real databases were not touched; the PostgreSQL suite ran only in its disposable local container. The frontend now invokes the separately named `invite-technician-brunbar`; tests verify its exact root callback and rejection of the legacy origin. The old function remains intact.
+
+The read-only Pages query returned Forbidden, so live hosting independence was not verified. The prepared deployment rejects the source repository and account-level repository, requires the dedicated repository and manual approval, checks its Pages custom domain read-only, and stages CNAME only in its deployment artifact. No workflow was dispatched. See HOSTING_INSPECTION.md for the exact limits and BRUNBAR_DEPLOYMENT.md for manual DNS/HTTPS/rollback steps.

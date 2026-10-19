@@ -1,14 +1,17 @@
-# Deployment
+# Deployment architecture
 
-For the exact private Supabase/Auth/Edge/GitHub configuration, follow **PRIVATE_SETUP.md**.
+Canonical prepared application URL: **https://brunbar.fi/**, Vite base `/`. Hash navigation (`#assets`, `#jobs`) and Auth query callbacks share the root static entrypoint. `npm run build` produces `dist/`; `npm run verify:build` checks emitted root asset references and rejects legacy deployment URLs in the browser bundle.
 
-- Canonical application URL and Vite base: `https://585.fi/huolto/`, `/huolto/`.
-- Hash navigation (`#assets`, `#jobs`) needs no server rewrites. Supabase callbacks return to the same static entrypoint using `?auth=invite` or `?auth=recovery`.
-- `.github/workflows/deploy.yml` retains PR validation and manual Pages deployment from `main` only. Manual builds require public repository variables `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`. The workflow supplies `VITE_BASE_PATH=/huolto/`. No server secrets belong in frontend variables.
-- The workflow does not apply SQL, deploy Edge Functions, create users, send invitation email or modify the custom domain. Existing DNS/proxy/static mount behavior for `585.fi/huolto/` remains the operator's responsibility; no CNAME is added.
-- Review and merge explicitly. Dispatch the workflow explicitly after configuring Supabase and the GitHub variables. Required reviewers on `github-pages` can add a deployment gate.
-- Local preview: `npm ci`, `npm run dev`, open `/huolto/`. Static output: `npm run build` → `dist/`. For another mount, set `VITE_BASE_PATH` and the exact corresponding Auth redirects; this private deployment should retain `/huolto/`.
+Read **HOSTING_INSPECTION.md** before any live action. Existing Pages custom-domain configuration could not be read (API Forbidden), so no sharing relationship with 585.fi is assumed safe. Do not repoint the existing Pages site.
 
-GitHub Pages hosts the public static application, not the authorization boundary. RLS, verified JWTs and privileged server functions protect data. Pages has no server secrets or configurable security headers; preserve any existing fronting host/proxy policies. If stronger header control or commercial hosting terms require it later, the same static build can be served from Cloudflare Pages, Netlify, Vercel or an existing static host while keeping Supabase and the current custom URL/path.
+Use a **new, dedicated** `makkelii/huoltopilotti-brunbar` repository and Pages site. **BRUNBAR_DEPLOYMENT.md** contains the Finnish operator checklist, new-repository setup, domain verification, DNS records, HTTPS, propagation, acceptance tests and brunbar-only rollback. **PRIVATE_SETUP.md** covers Supabase configuration without recreating an existing database.
 
-Stripe remains disabled. Do not deploy the billing stub or provide Stripe keys for this private internal deployment.
+- `.github/workflows/deploy.yml`: PR/manual validation only, no Pages publish step or Pages-write/OIDC permissions. It emits a normal non-deployed artifact, with no CNAME.
+- `.github/workflows/deploy-brunbar.yml`: manual-only publishing, exact dedicated repository and main-branch guards, explicit repository-variable/domain confirmation, and read-only Pages custom-domain verification. It never edits Pages settings, DNS or Supabase configuration. The `brunbar-production` environment can require human reviewers.
+- `deploy/brunbar/CNAME`: `brunbar.fi`, staged separately. Only the dedicated workflow copies it into its deployment artifact after tests. There is no root/public CNAME that could accidentally bind the source repo.
+- Public GitHub variables in the new repository: `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `BRUNBAR_DEPLOYMENT_APPROVED`. The workflow sets `VITE_BASE_PATH=/`. Never expose service-role, database or SMTP secrets in browser variables.
+- The existing invitation Edge Function is preserved; deploy only `invite-technician-brunbar` when later authorized. Set its namespaced `BRUNBAR_APP_ORIGIN=https://brunbar.fi`, leaving shared `APP_ORIGIN` and legacy function deployment unchanged.
+
+PR #2 was open at inspection; this preparation branch is based on its exact head and includes authentication, persistence and security work. No migrations are changed and no database reset is requested. If PR #2 is reviewed/merged separately, integrate in order; when copying into the dedicated repository use this reviewed combined branch, not the demo-only main.
+
+No automatic publication, merging, DNS changes or live integration work was performed. GitHub Pages hosts public static files; authorization remains in Supabase RLS and verified functions. Preserve any separately managed security headers and HTTPS policies. Stripe remains disabled.

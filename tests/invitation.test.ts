@@ -1,7 +1,7 @@
 import { it, expect, vi } from "vitest";
-import { createInvitationHandler } from "../supabase/functions/invite-technician/handler";
+import { createInvitationHandler } from "../supabase/functions/invite-technician-brunbar/handler";
 const fixture = () => ({
-  origin: "https://585.fi",
+  origin: "https://brunbar.fi",
   verify: vi.fn(async () => true),
   reserve: vi.fn(async (): Promise<string | null> => "invitation-id"),
   send: vi.fn(async () => true),
@@ -10,7 +10,7 @@ const fixture = () => ({
 const request = (
   body: unknown = {},
   authorization: string | null = "Bearer verified-test-token",
-  origin = "https://585.fi",
+  origin = "https://brunbar.fi",
 ) =>
   new Request("https://edge.example.invalid/invite-technician", {
     method: "POST",
@@ -72,7 +72,7 @@ it("uses server-selected redirect and ignores role/redirect supplied by caller",
   ).toBe(200);
   expect(p.send).toHaveBeenCalledWith(
     "tech@example.invalid",
-    "https://585.fi/huolto/?auth=invite",
+    "https://brunbar.fi/?auth=invite",
   );
   expect(p.reserve).toHaveBeenCalledWith(
     "Bearer verified-test-token",
@@ -91,4 +91,14 @@ it("revokes unused invitation reservation when delivery fails", async () => {
     ).status,
   ).toBe(502);
   expect(p.cancel).toHaveBeenCalledWith("invitation-id");
+});
+
+it("rejects the legacy production origin for the independent brunbar function", async () => {
+  const p = fixture();
+  const response = await createInvitationHandler(p)(
+    request({}, "Bearer token", "https://585.fi"),
+  );
+  expect(response.status).toBe(403);
+  expect(p.verify).not.toHaveBeenCalled();
+  expect(p.send).not.toHaveBeenCalled();
 });

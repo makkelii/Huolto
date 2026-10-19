@@ -89,7 +89,7 @@ function fixture(initial: Session | null = null) {
 beforeEach(() => {
   localStorage.clear();
   localStorage.setItem("hp-welcome", "1");
-  history.replaceState(null, "", "/huolto/");
+  history.replaceState(null, "", "/");
 });
 afterEach(() => {
   cleanup();
@@ -131,7 +131,7 @@ it("requests recovery with canonical subdirectory redirect and generic confirmat
   await screen.findByRole("status");
   expect(f.auth.resetPasswordForEmail).toHaveBeenCalledWith(
     "owner@example.invalid",
-    { redirectTo: expect.stringContaining("/huolto/?auth=recovery") },
+    { redirectTo: `${window.location.origin}/?auth=recovery` },
   );
 });
 it("accepts recovery event and updates password only through authenticated SDK", async () => {

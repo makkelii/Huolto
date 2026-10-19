@@ -10,7 +10,7 @@ export default defineConfig(({ mode }) => {
     env.VITE_SUPABASE_PUBLISHABLE_KEY || env.VITE_SUPABASE_ANON_KEY,
   );
   return {
-    base: loadEnv(mode, ".", "VITE_").VITE_BASE_PATH || "/huolto/",
+    base: loadEnv(mode, ".", "VITE_").VITE_BASE_PATH || "/",
     build: {
       rollupOptions: {
         output: { manualChunks: { supabase: ["@supabase/supabase-js"] } },

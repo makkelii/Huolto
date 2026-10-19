@@ -11,7 +11,9 @@
     "test": "vitest run",
     "test:integration": "vitest run tests/app.test.tsx tests/auth.test.tsx tests/repository.test.ts",
     "test:e2e": "playwright test",
-    "test:db": "bash scripts/test-db.sh"
+    "test:db": "bash scripts/test-db.sh",
+    "verify:build": "node scripts/verify-root-build.mjs",
+    "test:deployment": "node scripts/deployment.test.mjs"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.6",

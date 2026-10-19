@@ -1349,7 +1349,7 @@ export default function App({
                           setInviteStatus("");
                           try {
                             const { error } = await supabase.functions.invoke(
-                              "invite-technician",
+                              "invite-technician-brunbar",
                               {
                                 body: {
                                   organizationId: orgId,

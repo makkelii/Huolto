@@ -1,7 +1,7 @@
 project_id = "huoltopilotti"
 [auth]
-site_url = "https://585.fi/huolto/"
-additional_redirect_urls = ["https://585.fi/huolto/?auth=recovery", "https://585.fi/huolto/?auth=invite"]
+site_url = "https://brunbar.fi/"
+additional_redirect_urls = ["https://brunbar.fi/?auth=recovery", "https://brunbar.fi/?auth=invite"]
 enable_signup = false
 minimum_password_length = 12
 [auth.email]
@@ -9,4 +9,8 @@ enable_signup = false
 enable_confirmations = true
 [functions.invite-technician]
 # The handler validates every bearer token using auth.getUser(). Supports publishable keys.
+verify_jwt = false
+
+[functions.invite-technician-brunbar]
+# Independent function: validate every bearer token with auth.getUser().
 verify_jwt = false

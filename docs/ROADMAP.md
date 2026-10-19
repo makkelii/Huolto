@@ -14,3 +14,5 @@ Next priorities:
 8. GDPR erasure tooling, monitoring, backup/restore drills, retention and incident response procedures.
 
 Stripe is intentionally excluded from the private deployment. It must remain disabled until separately requested and approved.
+
+Brunbar.fi preparation: root-domain paths and callback URLs, guarded dedicated-repository deployment, staged CNAME, namespaced invitation function, operator DNS/HTTPS/rollback instructions. Creating the dedicated repository, inspecting live hosting, configuring Supabase and approving a later brunbar-only cutover remain manual tasks. Existing 585.fi resources must not be modified.

@@ -1,28 +1,14 @@
 # Deployment
 
-## Local
+For the exact private Supabase/Auth/Edge/GitHub configuration, follow **PRIVATE_SETUP.md**.
 
-Run `npm ci`, `npm run dev`, then visit the printed URL at `/Huolto/`. `npm run build` creates `dist/`. Hash navigation preserves direct links such as `/Huolto/#assets` without server rewrites. Vite uses the fixed `/Huolto/` base path for scripts and CSS. Changing the repository name requires changing this base and browser test baseURL.
+- Canonical application URL and Vite base: `https://585.fi/huolto/`, `/huolto/`.
+- Hash navigation (`#assets`, `#jobs`) needs no server rewrites. Supabase callbacks return to the same static entrypoint using `?auth=invite` or `?auth=recovery`.
+- `.github/workflows/deploy.yml` retains PR validation and manual Pages deployment from `main` only. Manual builds require public repository variables `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`. The workflow supplies `VITE_BASE_PATH=/huolto/`. No server secrets belong in frontend variables.
+- The workflow does not apply SQL, deploy Edge Functions, create users, send invitation email or modify the custom domain. Existing DNS/proxy/static mount behavior for `585.fi/huolto/` remains the operator's responsibility; no CNAME is added.
+- Review and merge explicitly. Dispatch the workflow explicitly after configuring Supabase and the GitHub variables. Required reviewers on `github-pages` can add a deployment gate.
+- Local preview: `npm ci`, `npm run dev`, open `/huolto/`. Static output: `npm run build` → `dist/`. For another mount, set `VITE_BASE_PATH` and the exact corresponding Auth redirects; this private deployment should retain `/huolto/`.
 
-## GitHub Pages (requires owner approval)
+GitHub Pages hosts the public static application, not the authorization boundary. RLS, verified JWTs and privileged server functions protect data. Pages has no server secrets or configurable security headers; preserve any existing fronting host/proxy policies. If stronger header control or commercial hosting terms require it later, the same static build can be served from Cloudflare Pages, Netlify, Vercel or an existing static host while keeping Supabase and the current custom URL/path.
 
-1. Review changes on a branch and run validation. Commit `package-lock.json`.
-2. Merge only after explicit approval. In repository Settings → Pages, select GitHub Actions.
-3. Configure the `github-pages` environment with required reviewers to gate publishing.
-4. Explicitly dispatch “Validate and deploy GitHub Pages” from `main` after approval. Pull requests validate but never deploy. Pushes do not trigger deployment.
-5. The workflow installs, lints, type-checks, runs unit/integration tests, builds, runs desktop/mobile Chromium smoke tests and publishes the build artifact.
-6. Confirm https://makkelii.github.io/Huolto/ and a direct hash route. Check network assets load from `/Huolto/assets/` and no server secrets appear in the bundle.
-
-This workflow was created but has not been dispatched. No remote branch or PR was created by the implementation task.
-
-## Supabase (not connected yet)
-
-Create a development Supabase project, run migrations with Supabase CLI (`supabase db reset` locally), then run `supabase/tests/tenant_isolation.sql` against the migrated local database. Review policies before production. Tenant provisioning must atomically create an organization and owner membership through a verified server endpoint. Clients must never self-assign memberships or edit subscriptions. Build authenticated production adapters and explicit organization selection before enabling production mode.
-
-The current billing function returns HTTP 503 by design. Before replacement: implement JWT verification, owner/admin membership verification, server-selected Stripe price IDs, allowlisted redirect URLs, customer ownership checks for the portal, raw-body webhook signature verification, an event-ID uniqueness ledger and idempotent subscription updates. Store Stripe keys, webhook secret and service-role key only as Edge secrets. Test with Stripe test keys; obtain explicit approval before live payments.
-
-## Commercial hosting limitations
-
-GitHub Pages is suitable for this static demo and uses a public static bundle. It has no server secrets, server routes, configurable security headers, SSR, authentication gateway or SLA; review GitHub's current commercial-use policies before operating a subscription business there. Host the static frontend on Cloudflare Pages, Netlify or Vercel with security headers and a custom domain; keep Supabase Auth/Postgres/Storage/Edge Functions as the backend. Update Vite base to `/` on a root-domain host. Configure CSP, HTTPS, HSTS, trusted origins and redirects. A public frontend is never a substitute for RLS.
-
-For isolated SQL validation without Supabase CLI, `npm run test:db` uses Docker PostgreSQL 16 and minimal Auth/Storage API fixtures. It does not test Supabase Auth sessions, Storage HTTP access or Edge deployment.
+Stripe remains disabled. Do not deploy the billing stub or provide Stripe keys for this private internal deployment.

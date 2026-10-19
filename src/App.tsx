@@ -1,4 +1,7 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { Repository, type Snapshot, RepositoryError } from "./data/repository";
+import { supabase } from "./data/supabase";
+import { TemplateEditor } from "./TemplateEditor";
+import { useEffect, useState, useRef, type FormEvent } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
   LayoutDashboard,
@@ -62,8 +65,31 @@ const nav: { page: Page; icon: typeof Box }[] = [
   { page: "reports", icon: BarChart3 },
 ];
 const storeKey = "huoltopilotti-demo-v1";
-export default function App() {
+export default function App({
+  initialSnapshot,
+  repository,
+  userName = "Aleksi Korhonen",
+  onSignOut,
+}: {
+  initialSnapshot?: Snapshot;
+  repository?: Repository;
+  userName?: string;
+  onSignOut?: () => Promise<void>;
+} = {}) {
+  const live = Boolean(repository),
+    orgId = initialSnapshot?.organizationId || "demo",
+    organizationName = initialSnapshot?.organizationName || "Nordic Works Oy";
+  const canManage =
+    !live || ["owner", "administrator"].includes(initialSnapshot?.role || "");
+  const snapshotRef = useRef(initialSnapshot),
+    savingRef = useRef(false);
+  const [saving, setSaving] = useState(false),
+    [inviteEmail, setInviteEmail] = useState(""),
+    [inviteStatus, setInviteStatus] = useState("");
+  const initials = userName.slice(0, 2).toUpperCase();
+
   const [store, setStore] = useState<Store>(() => {
+    if (initialSnapshot) return initialSnapshot.store;
     try {
       const raw = localStorage.getItem(storeKey);
       if (raw) {
@@ -91,8 +117,22 @@ export default function App() {
     const v = localStorage.getItem("hp-lang");
     return v === "en" || v === "de" ? v : "fi";
   });
-  const t = (k: Key) =>
-    translate(["fi", "en", "de"].includes(lang) ? lang : "fi", k);
+  const t = (key: Key) => {
+    const k = live
+      ? key === "demo"
+        ? "privateMode"
+        : key === "demoText"
+          ? "persistentText"
+          : key === "onboardingText"
+            ? "helpText"
+            : key === "limits"
+              ? "noEvidence"
+              : key === "saved"
+                ? "serverSaved"
+                : key
+      : key;
+    return translate(["fi", "en", "de"].includes(lang) ? lang : "fi", k);
+  };
   const [page, setPage] = useState<Page>("dashboard"),
     [query, setQuery] = useState(""),
     [filter, setFilter] = useState("all"),
@@ -111,6 +151,7 @@ export default function App() {
     [completion, setCompletion] = useState(false),
     [error, setError] = useState("");
   useEffect(() => {
+    if (live) return;
     try {
       localStorage.setItem(storeKey, JSON.stringify(store));
     } catch {
@@ -122,7 +163,7 @@ export default function App() {
             : "Browser storage is unavailable.",
       );
     }
-  }, [store, lang]);
+  }, [store, lang, live]);
   useEffect(() => {
     document.documentElement.lang = lang;
     localStorage.setItem("hp-lang", lang);
@@ -154,14 +195,72 @@ export default function App() {
     window.addEventListener("hashchange", apply);
     return () => window.removeEventListener("hashchange", apply);
   }, []);
-  const change = (next: Store) => {
-    setStore(next);
-    setToast(t("saved"));
+  const change = async (next: Store): Promise<boolean> => {
+    if (!repository) {
+      setStore(next);
+      setToast(t("saved"));
+      return true;
+    }
+    if (savingRef.current || !snapshotRef.current) return false;
+    savingRef.current = true;
+    setSaving(true);
+    setError("");
+    try {
+      const result = await repository.save(snapshotRef.current, next);
+      snapshotRef.current = result;
+      setStore(result.store);
+      setToast(t("serverSaved"));
+      return true;
+    } catch (e) {
+      setError(
+        t(
+          e instanceof RepositoryError && e.code === "40001"
+            ? "conflict"
+            : "saveError",
+        ),
+      );
+      return false;
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
   };
+  async function refresh() {
+    if (!repository || savingRef.current) return;
+    const revisionAtStart = snapshotRef.current?.revision;
+    const result = await repository.load();
+    if (savingRef.current || snapshotRef.current?.revision !== revisionAtStart)
+      return;
+    snapshotRef.current = result;
+    setStore(result.store);
+    setError("");
+  }
+  useEffect(() => {
+    if (!repository) return;
+    const timer = setInterval(() => {
+      if (
+        !savingRef.current &&
+        !modal &&
+        !selected &&
+        document.visibilityState === "visible"
+      )
+        void refresh().catch(() => setError(t("accessError")));
+    }, 15000);
+    return () => clearInterval(timer);
+  }, [repository, modal, selected]);
+
   const open = (
     kind: "asset" | "job" | "item",
     entry: Asset | Job | Item | null = null,
   ) => {
+    if (live && !canManage && (kind === "asset" || kind === "item")) {
+      setError(t("accessError"));
+      return;
+    }
+    if (kind === "job" && !store.assets.length) {
+      setError(t("noEquipment"));
+      return;
+    }
     setEditing(entry);
     setModal(kind);
     setError("");
@@ -186,12 +285,13 @@ export default function App() {
   };
   const assetName = (assetId: string) =>
     store.assets.find((a) => a.id === assetId)?.name || "—";
-  function submit(e: FormEvent<HTMLFormElement>) {
+  async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = new FormData(e.currentTarget),
       s = (k: string) => String(f.get(k) || "").trim();
     if (!s("name")) return;
     const entryId = editing?.id || id();
+    let ok = false;
     if (modal === "asset") {
       const asset: Asset = {
         id: entryId,
@@ -203,7 +303,7 @@ export default function App() {
         description: s("description"),
         status: "operational",
       };
-      change({
+      ok = await change({
         ...store,
         assets: editing
           ? store.assets.map((a) => (a.id === entryId ? asset : a))
@@ -227,7 +327,7 @@ export default function App() {
         actual: previous?.actual || {},
         recurrence: Number(s("recurrence")),
       };
-      change({
+      ok = await change({
         ...store,
         jobs: editing
           ? store.jobs.map((j) => (j.id === entryId ? job : j))
@@ -239,7 +339,7 @@ export default function App() {
         name: s("name"),
         type: s("type") as Item["type"],
         quantity: Number(s("quantity")),
-        reserved: 0,
+        reserved: (editing as Item | null)?.reserved || 0,
         location: s("location"),
         spec: s("spec"),
         manufacturer: s("manufacturer"),
@@ -248,7 +348,7 @@ export default function App() {
         compatible: s("compatible"),
         alternatives: s("alternatives"),
       };
-      change({
+      ok = await change({
         ...store,
         items: editing
           ? store.items.map((i) => (i.id === entryId ? item : i))
@@ -257,29 +357,33 @@ export default function App() {
     } else if (modal === "fault") {
       const text = s("name"),
         cause = s("cause");
-      change({
+      ok = await change({
         ...store,
         faults: [
           ...store.faults,
           {
             id: entryId,
-            orgId: "demo",
+            orgId,
             assetId: s("assetId"),
             symptoms: [text, text, text],
             cause: [cause, cause, cause],
-            check: store.faults[0].check,
+            check: [
+              translate("fi", "safe"),
+              translate("en", "safe"),
+              translate("de", "safe"),
+            ],
             verified: true,
             date: today,
           },
         ],
       });
     }
-    setModal(null);
+    if (ok) setModal(null);
   }
-  function finish() {
+  async function finish() {
     if (!chosen) return;
     try {
-      change(completeJob(store, chosen.id, actual, notes));
+      if (!(await change(completeJob(store, chosen.id, actual, notes)))) return;
       setCompletion(false);
       setSelected(null);
       setError("");
@@ -415,7 +519,12 @@ export default function App() {
     </div>
   );
   return (
-    <div className="app">
+    <div className="app" aria-busy={saving}>
+      {saving && (
+        <div className="saving-overlay" role="status">
+          {t("loading")}
+        </div>
+      )}
       <a className="skip" href="#main">
         {t("dashboard")}
       </a>
@@ -431,8 +540,11 @@ export default function App() {
             <Factory size={19} />
           </span>
           <span>
-            <strong>Nordic Works Oy</strong>
-            <small>{t("demo")} · Business</small>
+            <strong>{organizationName}</strong>
+            <small>
+              {t("demo")}
+              {!live ? " · Business" : ""}
+            </small>
           </span>
           <ChevronDown size={15} />
         </button>
@@ -475,10 +587,10 @@ export default function App() {
             {t("settings")}
           </button>
           <button className="profile" onClick={() => go("settings")}>
-            <span className="avatar">AK</span>
+            <span className="avatar">{initials}</span>
             <span>
-              <strong>Aleksi Korhonen</strong>
-              <small>{t("technician")}</small>
+              <strong>{userName}</strong>
+              <small>{t(initialSnapshot?.role || "technician")}</small>
             </span>
             <ChevronDown size={15} />
           </button>
@@ -531,7 +643,7 @@ export default function App() {
             >
               {dark ? <Sun size={18} /> : <Moon size={18} />}
             </button>
-            <span className="avatar small">AK</span>
+            <span className="avatar small">{initials}</span>
           </div>
         </header>
         <main id="main">
@@ -544,10 +656,14 @@ export default function App() {
                       day: "numeric",
                       month: "long",
                     })
-                  : "NORDIC WORKS OY"}
+                  : organizationName.toUpperCase()}
               </div>
               <h1>
-                {page === "dashboard" ? t("hello") : t(page)}
+                {page === "dashboard"
+                  ? live
+                    ? userName
+                    : t("hello")
+                  : t(page)}
                 {page === "dashboard" && <span className="heading-dot">.</span>}
               </h1>
               <p>
@@ -738,7 +854,11 @@ export default function App() {
                   </div>
                   <button
                     onClick={() => {
-                      setSelected(active[0]?.id || null);
+                      if (!active.length) {
+                        go("jobs");
+                        return;
+                      }
+                      setSelected(active[0].id);
                       setCompletion(false);
                     }}
                   >
@@ -796,9 +916,10 @@ export default function App() {
                         <Wrench size={16} />
                       </span>
                       <div>
-                        <strong>{store.jobs[1].name}</strong>
+                        <strong>{store.jobs[1]?.name || t("empty")}</strong>
                         <small>
-                          {t("progress")} · {t("demo")}
+                          {store.jobs[1] ? t(store.jobs[1].status) : t("empty")}{" "}
+                          · {t("demo")}
                         </small>
                       </div>
                     </div>
@@ -808,8 +929,14 @@ export default function App() {
                       <AlertTriangle size={16} />
                     </span>
                     <div>
-                      <strong>{t("low")}: SKF 6205-2RS</strong>
-                      <small>B-03 · {t("demo")}</small>
+                      <strong>
+                        {low.length
+                          ? t("low") + ": " + low[0].name
+                          : t("empty")}
+                      </strong>
+                      <small>
+                        {low[0]?.location || "—"} · {t("demo")}
+                      </small>
                     </div>
                   </div>
                 </section>
@@ -990,7 +1117,11 @@ export default function App() {
                       setSymptoms(e.target.value);
                       setSearched(false);
                     }}
-                    placeholder={local(store.faults[0].symptoms, lang)}
+                    placeholder={
+                      live
+                        ? t("symptoms")
+                        : local(store.faults[0].symptoms, lang)
+                    }
                   />
                   <Button type="submit">
                     <Search size={17} />
@@ -1001,7 +1132,7 @@ export default function App() {
               </section>
               <section>
                 {searched &&
-                  matchFaults(symptoms, store.faults, "demo").map(
+                  matchFaults(symptoms, store.faults, orgId).map(
                     ({ fault, terms }) => (
                       <article className="card padded match" key={fault.id}>
                         <span className="badge operational">
@@ -1020,7 +1151,7 @@ export default function App() {
                     ),
                   )}
                 {searched &&
-                  !matchFaults(symptoms, store.faults, "demo").length && (
+                  !matchFaults(symptoms, store.faults, orgId).length && (
                     <div className="card padded">{t("noMatch")}</div>
                   )}
               </section>
@@ -1063,11 +1194,13 @@ export default function App() {
                 {t("version")} {store.templateVersion}
               </span>
               <h2>
-                {lang === "fi"
-                  ? "Laakerihuollon valmistelu"
-                  : lang === "de"
-                    ? "Vorbereitung der Lagerwartung"
-                    : "Bearing maintenance preparation"}
+                {live
+                  ? t("templates")
+                  : lang === "fi"
+                    ? "Laakerihuollon valmistelu"
+                    : lang === "de"
+                      ? "Vorbereitung der Lagerwartung"
+                      : "Bearing maintenance preparation"}
               </h2>
               <p className="notice">{t("proposal")}</p>
               {store.templateRequirements.map((r) => (
@@ -1082,45 +1215,60 @@ export default function App() {
                   </div>
                 </div>
               ))}
-              {store.jobs.some((j) => j.status === "completed") && (
-                <Button
-                  onClick={() => {
-                    const latest = store.jobs
-                      .filter((j) => j.status === "completed")
-                      .sort((a, b) =>
-                        (a.completedAt || "").localeCompare(
-                          b.completedAt || "",
-                        ),
-                      )
-                      .at(-1);
-                    if (latest && window.confirm(t("approveConfirm"))) {
-                      const reqs = store.templateRequirements
-                        .map((r) => ({
-                          ...r,
-                          quantity: r.itemId
-                            ? (latest.actual[r.itemId] ?? r.quantity)
-                            : r.quantity,
-                          state: "unchecked" as const,
-                        }))
-                        .filter((r) => r.quantity > 0);
-                      change({
-                        ...store,
-                        templateVersion: store.templateVersion + 1,
-                        templateRequirements: reqs,
-                        templateHistory: [
-                          ...store.templateHistory,
-                          {
-                            version: store.templateVersion,
-                            approvedAt: new Date().toISOString(),
-                            requirements: store.templateRequirements,
-                          },
-                        ],
-                      });
-                    }
-                  }}
-                >
-                  {t("approve")}
-                </Button>
+              {canManage &&
+                store.jobs.some((j) => j.status === "completed") && (
+                  <Button
+                    onClick={() => {
+                      const latest = store.jobs
+                        .filter((j) => j.status === "completed")
+                        .sort((a, b) =>
+                          (a.completedAt || "").localeCompare(
+                            b.completedAt || "",
+                          ),
+                        )
+                        .at(-1);
+                      if (latest && window.confirm(t("approveConfirm"))) {
+                        const reqs = store.templateRequirements
+                          .map((r) => ({
+                            ...r,
+                            quantity: r.itemId
+                              ? (latest.actual[r.itemId] ?? r.quantity)
+                              : r.quantity,
+                            state: "unchecked" as const,
+                          }))
+                          .filter((r) => r.quantity > 0);
+                        change({
+                          ...store,
+                          templateVersion: store.templateVersion + 1,
+                          templateRequirements: reqs,
+                          templateHistory: [
+                            ...store.templateHistory,
+                            {
+                              version: store.templateVersion,
+                              approvedAt: new Date().toISOString(),
+                              requirements: store.templateRequirements,
+                            },
+                          ],
+                        });
+                      }
+                    }}
+                  >
+                    {t("approve")}
+                  </Button>
+                )}
+              {live && canManage && (
+                <TemplateEditor
+                  items={store.items}
+                  current={store.templateRequirements}
+                  lang={lang}
+                  onSave={(reqs) =>
+                    change({
+                      ...store,
+                      templateVersion: store.templateVersion + 1,
+                      templateRequirements: reqs,
+                    })
+                  }
+                />
               )}
               <h3>{t("history")}</h3>
               {store.templateHistory.map((v) => (
@@ -1150,46 +1298,118 @@ export default function App() {
                   <Sun size={17} />
                   {t("theme")}
                 </Button>
-                <h3>{t("demo")}</h3>
-                <p>{t("demoText")}</p>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    if (window.confirm(t("resetConfirm"))) {
-                      change(seed());
-                    }
-                  }}
-                >
-                  {t("reset")}
-                </Button>
+                {!live && (
+                  <>
+                    <h3>{t("demo")}</h3>
+                    <p>{t("demoText")}</p>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        if (window.confirm(t("resetConfirm"))) {
+                          change(seed());
+                        }
+                      }}
+                    >
+                      {t("reset")}
+                    </Button>
+                  </>
+                )}
+                {live && (
+                  <>
+                    <Button
+                      variant="outline"
+                      onClick={() =>
+                        void refresh().catch(() => setError(t("accessError")))
+                      }
+                    >
+                      {t("reload")}
+                    </Button>
+                    <Button variant="outline" onClick={onSignOut}>
+                      {t("signOut")}
+                    </Button>
+                  </>
+                )}
               </section>
               <section className="card padded">
-                <h2>{t("plan")}</h2>
-                <p className="notice">{t("disabled")}</p>
-                {[
-                  ["Free", "0 €", "5"],
-                  ["Pro", "19 € / month", "100"],
-                  ["Business", "49 € / month", "500"],
-                ].map(([name, price, n]) => (
-                  <div className="plan" key={name}>
-                    <strong>{name}</strong>
-                    <span>
-                      {price.replace(
-                        "month",
-                        lang === "fi"
-                          ? "kk"
-                          : lang === "de"
-                            ? "Monat"
-                            : "month",
-                      )}
-                    </span>
-                    <small>
-                      {n} {t("assets").toLowerCase()}
-                    </small>
-                  </div>
-                ))}
-                <h3>{t("team")}</h3>
-                <p>Aleksi Korhonen · {t("technician")}</p>
+                <h2>{t(live ? "team" : "plan")}</h2>
+                {live ? (
+                  <>
+                    <p>{organizationName}</p>
+                    {snapshotRef.current?.members.map((m) => (
+                      <p key={m.userId}>
+                        {m.name} · {t(m.role as Key)}
+                      </p>
+                    ))}
+                    {canManage && (
+                      <form
+                        onSubmit={async (e) => {
+                          e.preventDefault();
+                          if (!supabase) return;
+                          setSaving(true);
+                          setInviteStatus("");
+                          try {
+                            const { error } = await supabase.functions.invoke(
+                              "invite-technician",
+                              {
+                                body: {
+                                  organizationId: orgId,
+                                  email: inviteEmail,
+                                },
+                              },
+                            );
+                            setInviteStatus(
+                              t(error ? "inviteError" : "inviteSent"),
+                            );
+                          } catch {
+                            setInviteStatus(t("inviteError"));
+                          } finally {
+                            setSaving(false);
+                          }
+                        }}
+                      >
+                        <label>
+                          {t("email")}
+                          <input
+                            type="email"
+                            required
+                            value={inviteEmail}
+                            onChange={(e) => setInviteEmail(e.target.value)}
+                          />
+                        </label>
+                        <Button type="submit">{t("invite")}</Button>
+                        <p role="status">{inviteStatus}</p>
+                      </form>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <p className="notice">{t("disabled")}</p>
+                    {[
+                      ["Free", "0 €", "5"],
+                      ["Pro", "19 € / month", "100"],
+                      ["Business", "49 € / month", "500"],
+                    ].map(([name, price, n]) => (
+                      <div className="plan" key={name}>
+                        <strong>{name}</strong>
+                        <span>
+                          {price.replace(
+                            "month",
+                            lang === "fi"
+                              ? "kk"
+                              : lang === "de"
+                                ? "Monat"
+                                : "month",
+                          )}
+                        </span>
+                        <small>
+                          {n} {t("assets").toLowerCase()}
+                        </small>
+                      </div>
+                    ))}
+                    <h3>{t("team")}</h3>
+                    <p>Aleksi Korhonen · {t("technician")}</p>
+                  </>
+                )}
               </section>
             </div>
           )}
@@ -1347,13 +1567,31 @@ export default function App() {
                       </label>
                       <label>
                         {t("technician")}
-                        <input
-                          name="technician"
-                          required
-                          defaultValue={
-                            (editing as Job)?.technician || "Aleksi Korhonen"
-                          }
-                        />
+                        {live ? (
+                          <select
+                            name="technician"
+                            required
+                            defaultValue={
+                              (editing as Job)?.technician || userName
+                            }
+                          >
+                            {snapshotRef.current?.members
+                              .filter((m) => m.role !== "viewer")
+                              .map((m) => (
+                                <option key={m.userId} value={m.name}>
+                                  {m.name}
+                                </option>
+                              ))}
+                          </select>
+                        ) : (
+                          <input
+                            name="technician"
+                            required
+                            defaultValue={
+                              (editing as Job)?.technician || userName
+                            }
+                          />
+                        )}
                       </label>
                       <label>
                         {t("duration")}

@@ -1,0 +1,98 @@
+# Private two-user setup — https://585.fi/huolto/
+
+This guide enables real Supabase data for one owner and one technician. No passwords, service-role keys, database connection strings or SMTP credentials should be posted into chat, committed, or stored in GitHub Variables. Keep them in the appropriate Supabase Dashboard or local secret configuration. This PR does not merge, deploy, create live accounts, send invitations or change the published site automatically.
+
+## 1. Prepare a private Supabase project
+
+1. Sign in to Supabase Dashboard and create/select your project. Choose a suitable EU region and retain its database password in your password manager.
+2. In **Authentication → Sign In / Providers → Email**, enable email/password authentication, keep email confirmation enabled, and **turn off Allow new users to sign up / Enable sign ups**. Dashboard wording varies. Also disable anonymous sign-ins and every OAuth provider you do not need. The frontend has no signup or organization-creation screen, but disabling server-side public signup is essential.
+3. In **Authentication → Settings / Security and Protection**, set a minimum password length of 12 or stronger, suitable rate limits, and review session time limits. Prefer a short inactivity/session timeout for shared industrial devices. The frontend uses Supabase's refresh-token management and clears application state on sign-out or session loss. Tokens persist only in the Supabase auth storage key; application records are not stored in browser storage in private mode.
+4. In **Authentication → URL Configuration**, set **Site URL** to exactly `https://585.fi/huolto/`. Add these **Redirect URLs**:
+   - `https://585.fi/huolto/`
+   - `https://585.fi/huolto/?auth=invite`
+   - `https://585.fi/huolto/?auth=recovery`
+   Avoid wildcard redirects. For local integration testing only, add the corresponding exact URLs under `http://localhost:5173/huolto/`; remove them when no longer needed. Hash page navigation uses `#assets` etc.; auth callbacks use the same static entrypoint and do not require server rewrites.
+5. Configure **Authentication → Emails → SMTP Settings** using a verified sender and credentials entered directly in Supabase. The default provider has restrictive delivery limits and recipient restrictions. Set invite/recovery link expiry to at most two days; the application invitation authorization expires after two days regardless of the email token's setting. Retain the default secure `{{ .ConfirmationURL }}` in invitation and password-recovery templates. Do not replace it with a raw frontend URL: Supabase must verify the one-time token first. Disable email-provider click tracking if it breaks or prefetches authentication links. Test delivery after deployment.
+
+`supabase/config.toml` supplies matching settings for a local Supabase project. It does not automatically change a hosted project's Auth dashboard settings. Review hosted settings separately; do not assume deploying an Edge Function disables signup.
+
+## 2. Apply database migrations
+
+Use **SQL Editor** in the selected project (preferred without sharing a connection string):
+
+1. If this project has never had Huoltopilotti migrations applied, run the complete `supabase/migrations/202610190001_core.sql` once.
+2. Run `supabase/migrations/202610190002_private.sql` once. On a project already using the first migration, apply only the second. The second preserves existing normalized records, adds persistent application metadata and replaces direct client writes with the validated RPC API. Do not re-run either file on an initialized database.
+3. Check that both SQL executions succeeded. Run `select tablename, rowsecurity from pg_tables where schemaname='public';` and confirm every application table has `rowsecurity = true`.
+4. Do **not** run `supabase/tests/bootstrap.sql` on Supabase: it is a disposable PostgreSQL test fixture, not deployment SQL. Do not insert demo fixtures or copy localStorage data. A new production organization starts empty.
+
+If you already use the Supabase CLI, you can instead authenticate locally, link the project and run `supabase db push` through a secure local environment. Reconcile migration history first if files were previously applied in SQL Editor. Avoid destructive reset commands on the live project.
+
+## 3. Provision the owner without public signup
+
+1. In **Authentication → Users → Invite user**, enter the owner's email. Use the Dashboard/admin invitation; never enable public signup just to create the owner. If the UI asks for a redirect URL, choose `https://585.fi/huolto/?auth=invite`.
+2. The owner accepts the invitation email. Supabase confirms the email before redirecting. The new frontend supports password setup for `?auth=invite`. If the existing published demo does not support it yet, confirm the email now and use **Authentication → Users → Send password recovery** after the new build is explicitly deployed. Recovery uses the canonical callback above. No password is needed in SQL or chat.
+3. Copy the owner's non-secret **User UID** from Authentication → Users. Open `supabase/private-bootstrap.sql` in SQL Editor, replace the placeholder UUID with this UID and change the organization label. Execute it once after the email is confirmed.
+4. This transaction creates exactly one private organization, its owner membership and the private-deployment marker. It fails if already initialized, so repeating the guide does not overwrite existing organizations. No browser endpoint can invoke this bootstrap or create organizations.
+5. Check `select o.name, m.role, m.display_name from public.organizations o join public.memberships m on m.organization_id=o.id;`. There should initially be one owner in your organization. Display names default to verified email addresses and are also used for technician assignment in this initial version.
+
+The owner may initially see a “workspace could not be loaded” message before step 3; this is intentional. An authenticated account without membership has no access and does not receive a demo fallback.
+
+## 4. Deploy the secure invitation Edge Function
+
+1. Install the Supabase CLI locally and authenticate through its supported login flow. Link this repository to the selected project, keeping any CLI token/password outside source control.
+2. Deploy only the invitation function: `supabase functions deploy invite-technician`. Its configuration uses `verify_jwt = false` because the handler explicitly validates the bearer token through `auth.getUser()` on **every** request; it does not trust decoded claims. This supports current publishable keys. Do not remove this verification from the handler.
+3. In **Edge Functions → Secrets**, set `APP_ORIGIN` to `https://585.fi`. The `SUPABASE_URL`, `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` built-in Edge secrets are normally provided automatically. Verify they are available in the Edge runtime; never copy the service-role key into GitHub or frontend environment variables. Invitation redirects are server-selected as `https://585.fi/huolto/?auth=invite`; request bodies cannot override them.
+4. Check the function is deployed. Do not deploy or enable the billing function; Stripe is out of scope.
+
+The function checks the authenticated caller, manager membership and the single private-deployment organization. It reserves the one remaining user slot before sending a Supabase admin invite. The database creates a **technician** membership only when the invited email becomes confirmed, before the invitation expires. A caller cannot choose an owner role. Concurrent requests cannot reserve more than two total members/pending invitations. Unconfirmed accounts cannot access records.
+
+## 5. Configure GitHub Actions public variables
+
+In `makkelii/Huolto`, open **Settings → Secrets and variables → Actions → Variables → New repository variable**. Add:
+
+| Repository variable | Value | Visibility |
+| --- | --- | --- |
+| `VITE_SUPABASE_URL` | Project's API URL, e.g. `https://<project-ref>.supabase.co` | Public browser config |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | Project's **publishable** key (`sb_publishable_…`), or legacy **anon** JWT | Public browser config |
+
+Find these in Supabase **Project Settings → API Keys / Connect**. Never choose a secret key (`sb_secret_…`) or a `service_role` JWT. RLS and authenticated RPCs, not secrecy of the public key, protect records.
+
+The workflow supplies `VITE_BASE_PATH=/huolto/` explicitly. No other GitHub Actions variables or secrets are required for the frontend. Edge secrets and database/SMTP credentials stay in Supabase. For local development only, copy `.env.example` to gitignored `.env.local` and populate public configuration there. The legacy frontend variable `VITE_SUPABASE_ANON_KEY` is supported locally; the Actions workflow uses `VITE_SUPABASE_PUBLISHABLE_KEY`.
+
+When public configuration is missing, local development clearly shows that only the synthetic demo is available. Manual deployment fails if the required public configuration variables are absent, preventing accidental replacement of the private deployment with an unconfigured demo build.
+
+## 6. Review and explicitly deploy
+
+1. Review and merge the PR only when you choose to. No automatic merge is configured by this change.
+2. Preserve the existing hosting/DNS/proxy arrangement that serves `https://585.fi/huolto/`. This PR changes asset URLs to the lowercase `/huolto/` base; it does not change DNS, add a CNAME, or assert how your custom domain is currently connected. The current site must continue mounting the built artifact at `/huolto/`. If a proxy or separate static server fronts GitHub Pages, keep its path mapping intact.
+3. In GitHub **Settings → Pages**, retain GitHub Actions as the build source. Configure the `github-pages` environment with required reviewers if desired.
+4. In **Actions → Validate and deploy GitHub Pages → Run workflow**, choose `main`. Validation, PostgreSQL tests, frontend build and desktop/mobile browser tests run before deployment. Only manual dispatch from `main` can deploy; PRs do not deploy. The workflow retains the existing Pages deployment mechanism and does not publish Edge Functions or apply database migrations.
+5. Check `/huolto/` and `/huolto/#assets` on the actual domain. Scripts/CSS must load from `/huolto/assets/`. Confirm HTTPS and expected host/path mapping. `npm run build` can also be used to provide the same `dist/` to your existing static host if it is not directly served by Pages. Do not change the domain to complete this setup.
+
+## 7. Invite the technician from the application
+
+1. Sign in as the owner at `https://585.fi/huolto/`. Add a real asset and an inventory item first. You should see your organization name and “Private workspace”, with no seeded machines or demo records.
+2. Open **Settings → Team**, enter the technician's email, and select **Invite technician**. This is the first action that sends the real invitation email; do it only when ready.
+3. The technician accepts the one-time email link and sets a password. The account is assigned technician access to the **same organization**, without selecting or creating an organization.
+4. Both users can create/update jobs, prepare work, complete work and record confirmed faults. The owner/admin manages assets, inventory adjustments, template approvals and invitations. Technicians can read shared equipment/inventory and consume parts only through completion transactions. No third user slot is available through this invitation mechanism.
+5. If SMTP fails, the function returns an error and removes the unused reservation. If a function/network response is lost after sending, a pending invitation may remain. Inspect `private_invitations` in SQL Editor and the Auth user's state before resending. To revoke an unaccepted invitation, delete its pending `private_invitations` row in SQL Editor and remove the unconfirmed Auth user using the Dashboard. Never delete accepted memberships just to resend mail. Existing Auth users cannot be invited with the admin invite API; review those users manually rather than silently granting membership.
+
+## 8. Verify live behavior (must be done after your configuration)
+
+Use two separate browser profiles/devices:
+
+1. Owner adds an asset, then technician reloads or waits up to 15 seconds with no form open. Both should see the same record.
+2. Technician creates a job assigned to a real member. Owner sees it. Set up a preparation template as owner, with real tools/parts/safety/document/personnel requirements; new jobs copy the approved requirements. There is one organization-wide preparation template in this initial version. Existing job requirements stay unchanged by subsequent template revisions.
+3. Set stock to one for a spare part and create two jobs. Try consuming it concurrently. Only one completion should succeed; the other must reload and resolve the conflict. Verify history and stock movements; reusable tools must not be consumed. Completed jobs cannot be edited or completed again.
+4. Record a confirmed fault and search matching words as the other user. Results must reference only your organization's verified records. Matching remains deterministic and is not a diagnosis or a permit to start work.
+5. Test password recovery, expired/reused invite links, wrong password, sign-out and a second tab. Signed-out users must see the sign-in screen. Accounts without membership must see an access error. Open `https://585.fi/huolto/?demo=1` to check that synthetic data stays isolated; demo reset must not affect private records.
+6. Verify an outsider cannot register using the public Auth API (signup disabled) and cannot create an organization. Run security checks against a separate test project if testing other organizations. Do not use the service-role key to test RLS—it bypasses RLS.
+
+Local automated tests cover SDK/HTTP contracts with mocks and actual PostgreSQL permission/transaction behavior. They do not prove your live project's SMTP delivery, Auth dashboard configuration, redirect allowlist, Edge deployment, DNS or hosting headers. No successful live Supabase integration is claimed before these steps.
+
+## Operation and limitations
+
+- Authenticated records are loaded from PostgreSQL through `private_snapshot` and saved via `private_mutate`, never demo localStorage. UI preferences and the SDK's session are separate browser state. Separate devices share PostgreSQL records; polling runs every 15 seconds when no editing dialog is open. A manual **Reload data** action is available in Settings.
+- Stale revisions fail rather than overwrite concurrent work. After a conflict, reload and reapply your change. If a write response is lost, it may have committed: reload before retrying. Completion is atomic and guarded against duplicate consumption; the UI never retries it blindly.
+- Current scope supports one shared organization and two initial accounts, one default preparation template, and no application data-deletion UI. Use reviewed server/admin procedures for membership changes, record deletion and GDPR requests. Photos/QR workflows, advanced reservations and notifications are not added in this PR. Stripe stays inactive.
+- Back up before migrating. Enable and monitor Supabase backups, retain audit/history records according to your policy, review access periodically, and use production SMTP. Revoke sessions through Supabase Dashboard when a device is lost.

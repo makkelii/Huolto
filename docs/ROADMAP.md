@@ -1,12 +1,16 @@
-# Roadmap and known limitations
+# Roadmap
 
-1. Production data boundary: Auth, organization bootstrap, membership administration, tenant-aware repository adapters, loading/retry/conflict states and server validation. No automatic fallback to demo on production failures.
-2. Transactional completion RPC: lock job and inventory rows, idempotency key, planned/actual quantities, stock reservations, movement and history, confirmed fault outcomes, next recurring job in one transaction. Add database concurrency tests.
-3. Templates: draft/approval workflow, immutable versions, human-reviewed actual-use improvement proposals. Demo UI supports explicit quantity approval and version history; production approval adapters remain.
-4. Attachments/photos, private signed URLs, QR asset links, electrical/mechanical documents, explicit qualification/permit records and safe upload validation. No fabricated manuals.
-5. Stripe test checkout/portal and signed idempotent webhook; server-side entitlement/asset limits; explicit approval before live mode. Business limit currently shown as a provisional 500 assets and must be agreed commercially.
-6. Recurrence scheduler, reminders with tenant timezone and delivery logs; inventory reservation allocation and full audit UI. Demo completion creates the next recurring job, but no background scheduler runs.
-7. Verified outcome capture for Huoltotutka; accent/stem matching with explainable evidence, machine/part-specific filters, no diagnoses without records. Demo starts with one historical scenario and accepts human-confirmed outcomes.
-8. Full accessibility audit against WCAG 2.2 AA, keyboard/screen-reader and touch testing, contrast improvements where necessary, production localization review and date/number formatting. Current version targets AA but is not certified.
-9. Dedicated PDF generation, stock-consumption reports and permission-aware exports. Current PDF is browser print/save only.
-10. Operational readiness: dependency/security scanning, backups/restore, monitoring, GDPR workflows, retention and incident response. Current tests are foundations, not a production security assessment.
+Implemented in the private-deployment branch: email/password authentication, recovery/invite password setup, shared PostgreSQL adapters, private owner bootstrap, verified technician invitations, RLS and role enforcement, atomic completion/stock/history/recurrence, conflict detection, shared polling, explicit template approvals and separate demo mode. Live service configuration and acceptance checks are required; follow PRIVATE_SETUP.md.
+
+Next priorities:
+
+1. Complete operator acceptance on the real Supabase project: signup settings, SMTP/invitation delivery, recovery redirects, two-device shared data, session expiry, hosting path and backups. No live success is inferred from mocks.
+2. Add reviewed membership administration/session revocation UI and a more convenient pending-invitation reconciliation flow. The current deployment intentionally has two users and one organization-wide preparation template.
+3. Extend multiple template selection, required qualifications/permits/documents, private attachments/photos and QR links. Keep all safety decisions with qualified people.
+4. Inventory reservation allocation, units/decimal consumption UI, stock adjustments with mandatory human reasons, richer audit UI and reorder workflows. Current completion checks available stock, but no reservation-allocation UI is added.
+5. Background reminders, delivery logs and richer scheduling beyond transactional next-job creation on completion.
+6. Better searchable fault context, equipment filters and localization review; preserve explainable verified evidence and no paid AI dependency.
+7. Dedicated PDF generation, richer consumption reports, full WCAG audit, keyboard/screen-reader checks and Safari/Firefox testing.
+8. GDPR erasure tooling, monitoring, backup/restore drills, retention and incident response procedures.
+
+Stripe is intentionally excluded from the private deployment. It must remain disabled until separately requested and approved.

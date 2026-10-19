@@ -1,22 +1,32 @@
-# Executed validation — 19 October 2026
+# Executed validation — private Supabase development
 
-Environment: Node 24.19, npm 11.9, Linux, installed system Chromium, disposable Docker PostgreSQL 16.15. No remote deployment, GitHub push, merge, Supabase production connection or payment activation occurred.
+Tests ran in the local implementation environment with Node 24.19, npm 11.9, installed Chromium and Docker PostgreSQL 16.15. No live Supabase project credentials were supplied. No live accounts were created, no real invitations/recovery messages were sent, and no deployment or payment activation was performed.
 
 | Command | Result |
 | --- | --- |
-| `npm run build` | Passed; Vite production bundle at `/Huolto/` |
+| `npm run build` | Passed; lowercase `/huolto/` asset base, Supabase split into its own bundle |
 | `npm run lint` | Passed |
 | `npm run typecheck` | Passed |
-| `npm test` | 18 passed: 13 domain tests and 5 UI integration tests |
-| `npm run test:integration` | 5 passed (same integration subset) |
-| `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/chromium npm run test:e2e` | 4 passed: two scenarios each on desktop and mobile Chromium |
-| `npm run test:db` | Passed: migration applied to PostgreSQL, tenant reads/writes, viewer permissions, stock ledger and insufficient-stock rollback assertions |
-| `npm audit --omit=dev --audit-level=high` | 0 production dependency vulnerabilities reported |
+| `npm test` | 36 passed across domain, demo UI, authentication, repository, invitation-handler and public-config tests |
+| `npm run test:integration` | 15 passed (UI/authentication/repository subset of the above) |
+| `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/chromium npm run test:e2e` | 6 passed: three scenarios on desktop and mobile Chromium |
+| `npm run test:db` | Passed: both migrations, tenant permissions, shared records, invitations, and real concurrent last-part consumption |
+| `npm audit --omit=dev --audit-level=high` | Zero production dependency vulnerabilities reported |
 | `git diff --check` | Passed |
-| HTTP check of local `/Huolto/` | 200 |
 
-Browser coverage: onboarding, dashboard, mobile width, sidebar navigation, equipment creation/edit, reload persistence, job creation/edit, preparation status change, explicit safety notice, completion, stock deduction, report history and evidence-based troubleshooting. Desktop and mobile screenshots were inspected. Domain tests cover unknown evidence, verified/same-organization filtering, readiness precedence, atomic stock consumption, reusable tools, reservations, recurrence, duplicate completion and CSV escaping. Integration tests cover language switching, confirmed fault retrieval and explicit human approval of template changes.
+## Boundaries actually tested
 
-Early checks exposed an extra seed-file brace, ambiguous mobile menu name, mobile table/dialog overflow and invalid Testing Library options. These were corrected before final successful runs. Initial Playwright download was denied by network policy; installed system Chromium was used. Network-dependent commands required the execution environment's network capability.
+- Browser tests run the actual Supabase JavaScript SDK against intercepted Auth/PostgREST HTTP contract responses: password sign-in, server snapshot, guarded asset write, reload persistence, no demo-localStorage writes and sign-out. Existing demo equipment/job editing, readiness, completion, inventory consumption, history and troubleshooting workflows still pass on desktop/mobile. HTTP interception is not a live Supabase integration test.
+- Unit/integration tests cover recovery redirect requests, authenticated password updates, absent membership, session loss, late-response rejection, production write failure without fake success, deterministic same-organization verified evidence, reserved-stock checks, recurrence, human approval and CSV escaping.
+- Invitation handler tests cover invalid/missing tokens, browser origin enforcement, denied reservation/permissions, server-selected redirect and failed-delivery cleanup. Actual `auth.getUser()`, admin invite delivery and Deno Edge deployment remain service-boundary integration checks for the operator.
+- PostgreSQL tests run actual SQL/roles/RLS and functions in a disposable PostgreSQL 16 container, with minimal `auth.uid()`, Auth user and Storage table fixtures. They verify shared owner/technician records, viewer restrictions, anonymous/outsider/other-organization access denial, tenant reference constraints, direct-write rejection across tables, immutable completion, actual consumption, stock/history rollback, recurring job creation, fault persistence, invite confirmation/single-use/fixed technician role and the two-user limit. All public application tables are checked for enabled RLS.
+- Two independent database sessions race different jobs for a single spare part. Exactly one completion commits; the other receives a stale-revision conflict. Assertions check zero remaining stock, exactly one history record, one consumption movement and one committed revision.
+- Public-config tests reject privileged secret-key/service-role JWT formats, partial configuration and remote non-HTTPS endpoints.
 
-Limits: SQL fixtures emulate Supabase Auth UID and Storage tables; this is actual PostgreSQL RLS validation but not an end-to-end Supabase service test. Auth, Storage HTTP APIs, production organization provisioning, deployed Edge functions, Stripe signatures/transactions, stock concurrency, background reminders, full WCAG audit, Safari and Firefox remain unverified. The inactive billing function is excluded from the frontend TypeScript build and has not been deployed. No paid API was used.
+Early failures exposed asynchronous demo test expectations, an invitation fixture's assignment foreign key and a short-viewport sidebar scrolling issue. These were fixed before successful final runs.
+
+## Not verified live
+
+Hosted Supabase Auth settings, public signup disablement, SMTP delivery, recovery/invite token expiry and redirect allowlists, deployed Edge Functions, production RLS grants as installed in the selected project, Storage HTTP access, custom-domain DNS/proxy mapping, live two-device sessions and hosting security headers require the PRIVATE_SETUP.md acceptance checklist. The Deno entrypoint itself was not executed in the Supabase Edge runtime; its extracted handler was tested in Vitest. No live success is inferred from mocks or local SQL fixtures.
+
+No full WCAG audit, Safari/Firefox run, high-volume load test, background reminders, advanced reservations or Stripe integration is claimed.

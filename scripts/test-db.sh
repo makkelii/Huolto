@@ -11,3 +11,23 @@ done
 docker exec -i "$db_test_name" psql -U postgres -v ON_ERROR_STOP=1 < supabase/tests/bootstrap.sql
 docker exec -i "$db_test_name" psql -U postgres -v ON_ERROR_STOP=1 < supabase/migrations/202610190001_core.sql
 docker exec -i "$db_test_name" psql -U postgres -v ON_ERROR_STOP=1 < supabase/tests/tenant_isolation.sql
+for migration in supabase/migrations/*private.sql; do
+  docker exec -i "$db_test_name" psql -U postgres -v ON_ERROR_STOP=1 < "$migration"
+done
+docker exec -i "$db_test_name" psql -U postgres -v ON_ERROR_STOP=1 < supabase/tests/private.sql
+docker exec -i "$db_test_name" psql -U postgres -v ON_ERROR_STOP=1 < supabase/tests/concurrency-setup.sql
+mkdir -p work/db-tests
+(docker exec -i "$db_test_name" psql -U postgres -v ON_ERROR_STOP=1 < supabase/tests/concurrency-owner.sql > work/db-tests/owner.log 2>&1) &
+owner_process=$!
+(docker exec -i "$db_test_name" psql -U postgres -v ON_ERROR_STOP=1 < supabase/tests/concurrency-tech.sql > work/db-tests/tech.log 2>&1) &
+tech_process=$!
+owner_result=0; tech_result=0
+wait "$owner_process" || owner_result=$?
+wait "$tech_process" || tech_result=$?
+if { [ "$owner_result" -eq 0 ] && [ "$tech_result" -eq 0 ]; } || { [ "$owner_result" -ne 0 ] && [ "$tech_result" -ne 0 ]; }; then
+  cat work/db-tests/owner.log work/db-tests/tech.log
+  echo "Expected exactly one concurrent completion to succeed"; exit 1
+fi
+grep -q 'stale revision' work/db-tests/*.log
+docker exec -i "$db_test_name" psql -U postgres -v ON_ERROR_STOP=1 < supabase/tests/concurrency-assert.sql
+echo "PostgreSQL tenant, invitation, shared-data and concurrent inventory tests passed"
